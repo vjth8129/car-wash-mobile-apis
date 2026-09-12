@@ -1,0 +1,35 @@
+import { z } from 'zod';
+import { PASSWORD_COMPLEXITY_MESSAGE, isPasswordComplex } from '../utils/password';
+
+export const createUserSchema = z.object({
+  username: z.string().min(3).max(100),
+  password: z.string().refine(isPasswordComplex, { message: PASSWORD_COMPLEXITY_MESSAGE }),
+  name: z.string().min(2).max(150),
+  email: z.string().email().optional(),
+  phone: z.string().max(30).optional(),
+  roleId: z.string().uuid(),
+});
+
+export const updateUserSchema = z.object({
+  name: z.string().min(2).max(150).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().max(30).optional(),
+  roleId: z.string().uuid().optional(),
+});
+
+export const updateUserStatusSchema = z.object({
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']),
+});
+
+export const resetUserPasswordSchema = z.object({
+  newPassword: z.string().refine(isPasswordComplex, { message: PASSWORD_COMPLEXITY_MESSAGE }),
+});
+
+export const userIdParamSchema = z.object({ id: z.string().uuid() });
+
+export const listUsersQuerySchema = z.object({
+  page: z.string().optional(),
+  limit: z.string().optional(),
+  search: z.string().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
+});
