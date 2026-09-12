@@ -1,0 +1,18 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: carwash_api
+    restart: always
+    env_file:
+      - .env
+    # Bound to localhost only - nginx (installed on the host) terminates TLS on 80/443
+    # and reverse-proxies to this port. Do not publish this directly to 0.0.0.0 in production.
+    ports:
+      - "127.0.0.1:5000:5000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
