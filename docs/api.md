@@ -97,8 +97,26 @@ stateDiagram-v2
 Creating an order atomically confirms its booking (if still `PENDING`) in the
 same DB transaction. Each order status transition keeps the linked booking's
 status in sync in the same transaction (`CHECKED_IN`/`WASHING`/`READY` →
-booking `IN_PROGRESS`; `COMPLETED` → booking `COMPLETED`, and the service price
-is copied onto `orders.total_amount`; `CANCELLED` → booking `CANCELLED`).
+booking `IN_PROGRESS`; `COMPLETED` → booking `COMPLETED`, and the booking's
+`price` is copied onto `orders.total_amount`; `CANCELLED` → booking `CANCELLED`).
+
+## Private and taxi rates
+
+Each service has a `price` (private vehicles) and an optional `taxiPrice`
+(`null` = taxis pay `price`). Bookings take `vehicleCategory` (`PRIVATE`, the
+default, or `TAXI`). The server snapshots the matching rate into the booking's
+`price` on create. It re-prices only when `serviceId` or `vehicleCategory`
+changes, so later edits to a service's rates don't alter existing bookings.
+Services always include the `taxiPrice` key, which clients use to detect the
+feature.
+
+## Rate limiting
+
+Requests with a valid access token are limited per user
+(`RATE_LIMIT_USER_MAX`, default 1000 per `RATE_LIMIT_WINDOW_MS`). This way,
+staff sharing one public IP don't use up each other's quota. Anonymous requests
+are limited per IP (`RATE_LIMIT_MAX`, default 100). Auth endpoints keep their
+own stricter per-IP limiters.
 
 ## Pagination, filtering, search
 

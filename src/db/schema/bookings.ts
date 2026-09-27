@@ -1,10 +1,10 @@
-import { pgTable, uuid, text, date, time, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, date, time, timestamp, index, numeric } from 'drizzle-orm/pg-core';
 import { carWashes } from './car-washes';
 import { customers } from './customers';
 import { vehicles } from './vehicles';
 import { services } from './services';
 import { users } from './users';
-import { bookingStatusEnum } from './enums';
+import { bookingStatusEnum, vehicleCategoryEnum } from './enums';
 
 export const bookings = pgTable(
   'bookings',
@@ -27,6 +27,12 @@ export const bookings = pgTable(
     endTime: time('end_time').notNull(),
     status: bookingStatusEnum('status').notNull().default('PENDING'),
     notes: text('notes'),
+    vehicleCategory: vehicleCategoryEnum('vehicle_category').notNull().default('PRIVATE'),
+    /**
+     * Amount charged, snapshotted from the service's private/taxi rate when the booking is
+     * created (or its service/category changes), so later rate changes don't alter it.
+     */
+    price: numeric('price', { precision: 10, scale: 2 }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),

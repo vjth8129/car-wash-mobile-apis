@@ -6,9 +6,17 @@ export interface OrderWithBooking extends Order {
   booking: {
     id: string;
     status: string;
+    vehicleCategory: 'PRIVATE' | 'TAXI';
+    price: string | null;
     customer: { id: string; name: string; phone: string } | null;
     vehicle: { id: string; registrationNumber: string } | null;
-    service: { id: string; name: string; price: string; durationMinutes: number } | null;
+    service: {
+      id: string;
+      name: string;
+      price: string;
+      taxiPrice: string | null;
+      durationMinutes: number;
+    } | null;
   };
 }
 
@@ -23,7 +31,9 @@ export async function findOrderById(
         with: {
           customer: { columns: { id: true, name: true, phone: true } },
           vehicle: { columns: { id: true, registrationNumber: true } },
-          service: { columns: { id: true, name: true, price: true, durationMinutes: true } },
+          service: {
+            columns: { id: true, name: true, price: true, taxiPrice: true, durationMinutes: true },
+          },
         },
       },
     },
@@ -69,7 +79,7 @@ export async function listOrders(options: ListOrdersOptions) {
           with: {
             customer: { columns: { id: true, name: true, phone: true } },
             vehicle: { columns: { id: true, registrationNumber: true } },
-            service: { columns: { id: true, name: true, price: true } },
+            service: { columns: { id: true, name: true, price: true, taxiPrice: true } },
           },
         },
       },

@@ -115,8 +115,11 @@ export async function updateOrderStatus(
     const updates: Record<string, unknown> = { status: nextStatus, updatedAt: new Date() };
     const field = timestampField[nextStatus];
     if (field) updates[field] = new Date();
-    if (nextStatus === 'COMPLETED' && existing.booking?.service?.price) {
-      updates.totalAmount = existing.booking.service.price;
+    if (nextStatus === 'COMPLETED') {
+      // The booking's price snapshot reflects the private/taxi rate at booking time;
+      // fall back to the service price for bookings created before prices were snapshotted.
+      const amount = existing.booking?.price ?? existing.booking?.service?.price;
+      if (amount) updates.totalAmount = amount;
     }
     await tx.update(orders).set(updates).where(eq(orders.id, id));
 

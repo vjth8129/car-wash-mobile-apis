@@ -21,7 +21,10 @@ export const services = pgTable(
       .references(() => carWashes.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 150 }).notNull(),
     description: text('description'),
+    /** Rate for private vehicles (the default rate). */
     price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+    /** Rate for taxis; null means taxis are charged `price`. */
+    taxiPrice: numeric('taxi_price', { precision: 10, scale: 2 }),
     durationMinutes: integer('duration_minutes').notNull(),
     status: statusEnum('status').notNull().default('ACTIVE'),
     sortOrder: integer('sort_order').notNull().default(0),

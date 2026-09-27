@@ -21,6 +21,16 @@ const ALLOWED_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   NO_SHOW: [],
 };
 
+type VehicleCategory = 'PRIVATE' | 'TAXI';
+
+/** The rate a booking is charged: the taxi rate for taxis when one is set, else the regular price. */
+export function rateForCategory(
+  service: { price: string; taxiPrice: string | null },
+  category: VehicleCategory,
+): string {
+  return category === 'TAXI' && service.taxiPrice !== null ? service.taxiPrice : service.price;
+}
+
 /** Editable fields (date/time/service/vehicle/notes) only make sense before work has started. */
 const EDITABLE_STATUSES: BookingStatus[] = ['PENDING', 'CONFIRMED'];
 
@@ -90,6 +100,7 @@ export async function createBooking(
     throw new ConflictError('This vehicle already has an overlapping booking at that time');
   }
 
+  const vehicleCategory: VehicleCategory = input.vehicleCategory ?? 'PRIVATE';
   const booking = await bookingRepo.createBooking({
     carWashId,
     customerId: input.customerId,
@@ -99,6 +110,8 @@ export async function createBooking(
     startTime: input.startTime,
     endTime,
     notes: input.notes,
+    vehicleCategory,
+    price: rateForCategory(service, vehicleCategory),
     createdBy: user.id,
   });
 
@@ -140,6 +153,10 @@ export async function updateBooking(carWashId: string, id: string, input: any, r
     throw new ConflictError('This vehicle already has an overlapping booking at that time');
   }
 
+  const vehicleCategory: VehicleCategory = input.vehicleCategory ?? existing.vehicleCategory;
+  // Re-price only when what's being bought changed; otherwise keep the original snapshot.
+  const repriced = serviceId !== existing.serviceId || vehicleCategory !== existing.vehicleCategory;
+
   await bookingRepo.updateBooking(id, carWashId, {
     vehicleId,
     serviceId,
@@ -147,6 +164,11 @@ export async function updateBooking(carWashId: string, id: string, input: any, r
     startTime,
     endTime,
     notes: input.notes ?? existing.notes,
+    vehicleCategory,
+    price:
+      repriced || existing.price === null
+        ? rateForCategory(service, vehicleCategory)
+        : existing.price,
   });
 
   await recordAuditLog({

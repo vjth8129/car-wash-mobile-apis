@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 
+const vehicleCategory = z.enum(['PRIVATE', 'TAXI']);
+
 export const createBookingSchema = z.object({
   customerId: z.string().uuid(),
   vehicleId: z.string().uuid(),
@@ -9,6 +11,7 @@ export const createBookingSchema = z.object({
   bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'bookingDate must be YYYY-MM-DD'),
   startTime: z.string().regex(timeRegex, 'startTime must be HH:mm'),
   notes: z.string().optional(),
+  vehicleCategory: vehicleCategory.optional(),
 });
 
 export const updateBookingSchema = z.object({
@@ -20,6 +23,7 @@ export const updateBookingSchema = z.object({
     .optional(),
   startTime: z.string().regex(timeRegex).optional(),
   notes: z.string().optional(),
+  vehicleCategory: vehicleCategory.optional(),
 });
 
 export const bookingIdParamSchema = z.object({ id: z.string().uuid() });

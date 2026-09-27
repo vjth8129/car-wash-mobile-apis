@@ -16,7 +16,10 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.string().default('info'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000),
+  /** Per-IP limit for unauthenticated requests. */
   RATE_LIMIT_MAX: z.coerce.number().default(100),
+  /** Per-user limit for authenticated requests (many staff can share one IP on a shop's Wi-Fi). */
+  RATE_LIMIT_USER_MAX: z.coerce.number().default(1000),
   FORGOT_PASSWORD_RATE_LIMIT_MAX: z.coerce.number().default(5),
   MAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
   MAIL_FROM: z.string().default('no-reply@carwash.local'),

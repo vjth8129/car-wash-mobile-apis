@@ -48,7 +48,8 @@ router.use(authenticate);
  *             properties:
  *               name: { type: string, example: Premium Wash }
  *               description: { type: string }
- *               price: { type: number, example: 499.00 }
+ *               price: { type: number, example: 499.00, description: Rate for private vehicles }
+ *               taxiPrice: { type: number, nullable: true, example: 449.00, description: Rate for taxis; null or omitted means taxis are charged price }
  *               durationMinutes: { type: integer, example: 45 }
  *     responses:
  *       201: { description: Service created }
@@ -84,11 +85,25 @@ router.post(
  *   patch:
  *     tags: [Services]
  *     summary: Update a service
+ *     description: Send status INACTIVE to deactivate (reversible - it stays listed under status=INACTIVE) and ACTIVE to reactivate. DELETE removes the service permanently from listings.
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               price: { type: number, description: Rate for private vehicles }
+ *               taxiPrice: { type: number, nullable: true, description: Rate for taxis; null = same as price }
+ *               durationMinutes: { type: integer }
+ *               status: { type: string, enum: [ACTIVE, INACTIVE] }
+ *               sortOrder: { type: integer }
  *     responses:
  *       200: { description: Service updated }
  *   delete:

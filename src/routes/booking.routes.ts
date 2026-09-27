@@ -36,7 +36,7 @@ router.use(authenticate);
  *   post:
  *     tags: [Bookings]
  *     summary: Create a booking
- *     description: customerId, vehicleId and serviceId must all belong to the caller's car wash; endTime is derived from the service duration and overlapping bookings for the same vehicle are rejected.
+ *     description: customerId, vehicleId and serviceId must all belong to the caller's car wash; endTime is derived from the service duration and overlapping bookings for the same vehicle are rejected. The response's price is set by the server - the service's taxiPrice for TAXI bookings (when set), otherwise its price - and is kept even if the service's rates change later.
  *     requestBody:
  *       required: true
  *       content:
@@ -51,6 +51,7 @@ router.use(authenticate);
  *               bookingDate: { type: string, format: date }
  *               startTime: { type: string, example: "14:30" }
  *               notes: { type: string }
+ *               vehicleCategory: { type: string, enum: [PRIVATE, TAXI], default: PRIVATE, description: Decides which service rate is charged }
  *     responses:
  *       201: { description: Booking created }
  *       409:
@@ -85,11 +86,24 @@ router.post(
  *   patch:
  *     tags: [Bookings]
  *     summary: Update a booking (only while PENDING or CONFIRMED)
+ *     description: Changing serviceId or vehicleCategory re-prices the booking from the service's current rates.
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               vehicleId: { type: string, format: uuid }
+ *               serviceId: { type: string, format: uuid }
+ *               bookingDate: { type: string, format: date }
+ *               startTime: { type: string, example: "14:30" }
+ *               notes: { type: string }
+ *               vehicleCategory: { type: string, enum: [PRIVATE, TAXI] }
  *     responses:
  *       200: { description: Booking updated }
  */

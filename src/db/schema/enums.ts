@@ -25,6 +25,9 @@ export const bookingStatusEnum = pgEnum('booking_status', [
   'NO_SHOW',
 ]);
 
+/** Whether a vehicle is washed as a private car or a taxi - decides which service rate applies. */
+export const vehicleCategoryEnum = pgEnum('vehicle_category', ['PRIVATE', 'TAXI']);
+
 export const orderStatusEnum = pgEnum('order_status', [
   'CREATED',
   'CHECKED_IN',

@@ -8,7 +8,9 @@ export async function findBookingById(id: string, carWashId: string): Promise<Bo
     with: {
       customer: { columns: { id: true, name: true, phone: true } },
       vehicle: { columns: { id: true, registrationNumber: true } },
-      service: { columns: { id: true, name: true, price: true, durationMinutes: true } },
+      service: {
+        columns: { id: true, name: true, price: true, taxiPrice: true, durationMinutes: true },
+      },
     },
   });
 }
@@ -93,7 +95,9 @@ export async function listBookings(options: ListBookingsOptions) {
       with: {
         customer: { columns: { id: true, name: true, phone: true } },
         vehicle: { columns: { id: true, registrationNumber: true } },
-        service: { columns: { id: true, name: true, price: true, durationMinutes: true } },
+        service: {
+          columns: { id: true, name: true, price: true, taxiPrice: true, durationMinutes: true },
+        },
       },
       limit: options.limit,
       offset: options.offset,

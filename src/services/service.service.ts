@@ -5,6 +5,10 @@ import { PaginationQuery } from '../utils/pagination';
 import { recordAuditLog, AUDIT_ACTIONS } from './audit-log.service';
 import { Request } from 'express';
 
+function toNumericOrNull(value: number | null | undefined): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
 export async function listServices(
   carWashId: string,
   pagination: PaginationQuery,
@@ -27,6 +31,7 @@ export async function createService(carWashId: string, input: any, req?: Request
   const service = await serviceRepo.createService({
     ...input,
     price: String(input.price),
+    taxiPrice: toNumericOrNull(input.taxiPrice),
     carWashId,
   });
   await recordAuditLog({
@@ -46,6 +51,7 @@ export async function updateService(carWashId: string, id: string, input: any, r
   const updated = await serviceRepo.updateService(id, carWashId, {
     ...input,
     price: input.price !== undefined ? String(input.price) : undefined,
+    taxiPrice: input.taxiPrice !== undefined ? toNumericOrNull(input.taxiPrice) : undefined,
   });
   await recordAuditLog({
     req,
