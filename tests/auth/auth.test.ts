@@ -1,16 +1,17 @@
 import request from 'supertest';
 
 jest.mock('../../src/utils/mailer', () => ({
-  sendPasswordResetEmail: jest.fn(async () => undefined),
+  sendPasswordResetCodeEmail: jest.fn(async () => undefined),
   mailer: { send: jest.fn(async () => undefined) },
 }));
 
 import { createApp } from '../../src/app';
-import { sendPasswordResetEmail } from '../../src/utils/mailer';
+import { sendPasswordResetCodeEmail } from '../../src/utils/mailer';
 import { db, pool } from '../../src/db';
 import { passwordResetTokens, users, roles } from '../../src/db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { hashToken } from '../../src/utils/tokens';
+import { env } from '../../src/config/env';
 import { hashPassword } from '../../src/utils/password';
 
 const app = createApp();
@@ -151,22 +152,24 @@ describe('Forgot / reset password', () => {
     expect(known.body.data.message).toBe(unknown.body.data.message);
   });
 
-  it('resets the password with a valid token and invalidates it after use', async () => {
-    const testUser = await createResetTestUser();
-    await request(app).post('/api/v1/auth/forgot-password').send({ username: testUser.username });
-
-    expect(sendPasswordResetEmail).toHaveBeenCalled();
-    const [, resetLink] = (sendPasswordResetEmail as jest.Mock).mock.calls.at(-1) as [
+  async function requestCode(username: string): Promise<string> {
+    await request(app).post('/api/v1/auth/forgot-password').send({ username });
+    const [, code] = (sendPasswordResetCodeEmail as jest.Mock).mock.calls.at(-1) as [
       string,
       string,
     ];
-    const token = new URL(resetLink).searchParams.get('token')!;
-    expect(token).toEqual(expect.any(String));
+    return code;
+  }
+
+  it('resets the password with the emailed code, which is single-use', async () => {
+    const testUser = await createResetTestUser();
+    const code = await requestCode(testUser.username);
+    expect(code).toMatch(/^\d{6}$/);
 
     const newPassword = 'NewResetPass@123';
     const resetRes = await request(app)
       .post('/api/v1/auth/reset-password')
-      .send({ token, newPassword });
+      .send({ username: testUser.username, code, newPassword });
     expect(resetRes.status).toBe(200);
 
     // Old password no longer works, new one does.
@@ -180,29 +183,57 @@ describe('Forgot / reset password', () => {
       .send({ username: testUser.username, password: newPassword });
     expect(newLogin.status).toBe(200);
 
-    // Token is one-time-use: reusing it must fail even though it hasn't expired.
+    // Code is one-time-use: reusing it must fail even though it hasn't expired.
     const reuseRes = await request(app)
       .post('/api/v1/auth/reset-password')
-      .send({ token, newPassword: 'AnotherPass@123' });
+      .send({ username: testUser.username, code, newPassword: 'AnotherPass@123' });
     expect(reuseRes.status).toBe(400);
   });
 
-  it('rejects an expired reset token', async () => {
+  it('accepts the dev code (1111 outside production) only after a code was requested', async () => {
+    expect(env.DEV_RESET_CODE).toBe('1111');
     const testUser = await createResetTestUser();
 
-    const secret = 'expired-secret-for-testing-only';
-    const [row] = await db
-      .insert(passwordResetTokens)
-      .values({
-        userId: testUser.id,
-        tokenHash: hashToken(secret),
-        expiresAt: new Date(Date.now() - 60 * 1000), // already expired
-      })
-      .returning();
+    const withoutRequest = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ username: testUser.username, code: '1111', newPassword: 'DevCodePass@123' });
+    expect(withoutRequest.status).toBe(400);
+
+    await requestCode(testUser.username);
+    const withRequest = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ username: testUser.username, code: '1111', newPassword: 'DevCodePass@123' });
+    expect(withRequest.status).toBe(200);
+  });
+
+  it('burns the code after 5 wrong attempts', async () => {
+    const testUser = await createResetTestUser();
+    const code = await requestCode(testUser.username);
+    const wrong = code === '000000' ? '999999' : '000000';
+
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app)
+        .post('/api/v1/auth/reset-password')
+        .send({ username: testUser.username, code: wrong, newPassword: 'WrongCode@123' });
+      expect(res.status).toBe(400);
+    }
+    const correctButBurned = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ username: testUser.username, code, newPassword: 'RightCode@123' });
+    expect(correctButBurned.status).toBe(400);
+  });
+
+  it('rejects an expired code', async () => {
+    const testUser = await createResetTestUser();
+    await db.insert(passwordResetTokens).values({
+      userId: testUser.id,
+      tokenHash: hashToken(`${testUser.id}:123456`),
+      expiresAt: new Date(Date.now() - 60 * 1000), // already expired
+    });
 
     const res = await request(app)
       .post('/api/v1/auth/reset-password')
-      .send({ token: `${row.id}.${secret}`, newPassword: 'SomeNewPass@123' });
+      .send({ username: testUser.username, code: '123456', newPassword: 'SomeNewPass@123' });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');

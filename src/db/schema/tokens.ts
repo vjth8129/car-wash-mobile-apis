@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, index, integer } from 'drizzle-orm/pg-core';
 import { users } from './users';
 
 export const refreshTokens = pgTable(
@@ -29,9 +29,12 @@ export const passwordResetTokens = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /** sha256 of the one-time reset code. */
     tokenHash: varchar('token_hash', { length: 255 }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
+    /** Wrong codes entered against this request; it is burned after too many. */
+    attempts: integer('attempts').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

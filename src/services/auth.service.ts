@@ -3,16 +3,18 @@ import { db } from '../db';
 import { refreshTokens, passwordResetTokens, users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { findUserByUsername, findUserById, updateLastLogin } from '../repositories/user.repository';
-import { getPermissionKeysForRole } from '../repositories/permission.repository';
+import { getEffectivePermissionKeys } from '../repositories/permission.repository';
 import {
   createRefreshToken,
   findRefreshTokenById,
   revokeRefreshToken,
   revokeAllRefreshTokensForUser,
 } from '../repositories/refresh-token.repository';
+import crypto from 'crypto';
 import {
   createPasswordResetToken,
-  findValidPasswordResetTokenByHash,
+  findActiveResetTokenForUser,
+  incrementResetTokenAttempts,
   invalidateActiveResetTokensForUser,
 } from '../repositories/password-reset-token.repository';
 import { hashPassword, verifyPassword } from '../utils/password';
@@ -21,7 +23,7 @@ import { signAccessToken } from '../utils/jwt';
 import { parseDurationMs } from '../utils/duration';
 import { env } from '../config/env';
 import { UnauthorizedError, ValidationError } from '../utils/errors';
-import { sendPasswordResetEmail } from '../utils/mailer';
+import { sendPasswordResetCodeEmail } from '../utils/mailer';
 import { recordAuditLog, AUDIT_ACTIONS } from './audit-log.service';
 import { logger } from '../config/logger';
 
@@ -67,6 +69,7 @@ function serializeUser(user: {
   username: string;
   name: string;
   carWashId: string | null;
+  mustChangePassword: boolean;
   role: { id: string; name: string };
 }) {
   return {
@@ -75,7 +78,22 @@ function serializeUser(user: {
     name: user.name,
     role: user.role.name,
     carWashId: user.carWashId,
+    mustChangePassword: user.mustChangePassword,
   };
+}
+
+/** Wrong codes allowed per reset request before it is burned. */
+const MAX_RESET_CODE_ATTEMPTS = 5;
+
+/** Codes are short, so the hash is bound to the user to stop cross-account lookups. */
+function hashResetCode(userId: string, code: string): string {
+  return hashToken(`${userId}:${code}`);
+}
+
+function codesMatch(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
 export async function login(username: string, password: string, req?: Request) {
@@ -202,7 +220,7 @@ export async function getCurrentUserContext(userId: string) {
   if (!user) {
     throw new UnauthorizedError('User no longer exists');
   }
-  const permissions = await getPermissionKeysForRole(user.roleId);
+  const permissions = await getEffectivePermissionKeys(user.roleId, user.carWashId);
   return {
     id: user.id,
     username: user.username,
@@ -212,6 +230,7 @@ export async function getCurrentUserContext(userId: string) {
     role: { id: user.role.id, name: user.role.name },
     permissions,
     carWash: user.carWash ? { id: user.carWash.id, name: user.carWash.name } : null,
+    mustChangePassword: user.mustChangePassword,
   };
 }
 
@@ -225,25 +244,22 @@ export async function forgotPassword(username: string, req?: Request): Promise<v
 
   await invalidateActiveResetTokensForUser(user.id);
 
-  const secret = generateOpaqueToken();
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   const expiresAt = new Date(Date.now() + parseDurationMs(env.RESET_TOKEN_EXPIRES_IN));
-  const row = await createPasswordResetToken({
+  await createPasswordResetToken({
     userId: user.id,
-    tokenHash: hashToken(secret),
+    tokenHash: hashResetCode(user.id, code),
     expiresAt,
   });
-  const resetToken = buildRefreshTokenString(row.id, secret);
-  const resetLink = `${env.APP_PUBLIC_URL}/reset-password?token=${encodeURIComponent(resetToken)}`;
 
   if (user.email) {
-    await sendPasswordResetEmail(user.email, resetLink).catch((err) => {
-      logger.error({ err }, 'Failed to send password reset email');
+    await sendPasswordResetCodeEmail(user.email, code).catch((err) => {
+      logger.error({ err }, 'Failed to send password reset code');
     });
+  } else if (env.NODE_ENV !== 'production') {
+    logger.info({ userId: user.id, code }, '[dev] Password reset code (user has no email on file)');
   } else {
-    logger.info(
-      { userId: user.id, resetLink },
-      '[dev] Password reset link (user has no email on file)',
-    );
+    logger.warn({ userId: user.id }, 'Password reset requested but the user has no email on file');
   }
 
   await recordAuditLog({
@@ -257,39 +273,88 @@ export async function forgotPassword(username: string, req?: Request): Promise<v
 }
 
 export async function resetPassword(
-  token: string,
-  newPassword: string,
+  input: { username: string; code: string; newPassword: string },
   req?: Request,
 ): Promise<void> {
-  const parsed = parseRefreshTokenString(token);
-  if (!parsed) {
-    throw new ValidationError('Invalid or expired reset token');
-  }
-  const row = await findValidPasswordResetTokenByHash(hashToken(parsed.secret));
-  if (!row || row.id !== parsed.id || row.expiresAt.getTime() < Date.now()) {
-    throw new ValidationError('Invalid or expired reset token');
+  const invalid = () => new ValidationError('Invalid or expired code');
+
+  const user = await findUserByUsername(input.username);
+  if (!user || user.status !== 'ACTIVE') throw invalid();
+
+  // A code must have been requested (and still be live) - this includes the dev code.
+  const row = await findActiveResetTokenForUser(user.id);
+  if (!row) throw invalid();
+
+  const isDevCode = !!env.DEV_RESET_CODE && input.code === env.DEV_RESET_CODE;
+  if (!isDevCode && !codesMatch(hashResetCode(user.id, input.code), row.tokenHash)) {
+    const attempts = await incrementResetTokenAttempts(row.id);
+    if (attempts >= MAX_RESET_CODE_ATTEMPTS) {
+      await invalidateActiveResetTokensForUser(user.id);
+    }
+    throw invalid();
   }
 
-  const passwordHash = await hashPassword(newPassword);
+  const passwordHash = await hashPassword(input.newPassword);
 
   await db.transaction(async (tx) => {
     await tx
       .update(users)
-      .set({ passwordHash, updatedAt: new Date() })
-      .where(eq(users.id, row.userId));
+      .set({ passwordHash, mustChangePassword: false, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
     await tx
       .update(passwordResetTokens)
       .set({ usedAt: new Date() })
       .where(eq(passwordResetTokens.id, row.id));
   });
 
-  await revokeAllRefreshTokensForUser(row.userId);
+  await revokeAllRefreshTokensForUser(user.id);
 
   await recordAuditLog({
     req,
-    userId: row.userId,
+    userId: user.id,
+    carWashId: user.carWashId,
     action: AUDIT_ACTIONS.PASSWORD_RESET,
     entityType: 'USER',
-    entityId: row.userId,
+    entityId: user.id,
+    metadata: isDevCode ? { devCode: true } : undefined,
   });
+}
+
+/**
+ * The signed-in user changes their own password (required after an admin set it).
+ * Other sessions are signed out; the caller gets a fresh token pair.
+ */
+export async function changePassword(
+  userId: string,
+  input: { currentPassword: string; newPassword: string },
+  req?: Request,
+) {
+  const user = await findUserById(userId);
+  if (!user) throw new UnauthorizedError('User no longer exists');
+
+  if (!(await verifyPassword(user.passwordHash, input.currentPassword))) {
+    throw new ValidationError('Current password is incorrect');
+  }
+  if (input.currentPassword === input.newPassword) {
+    throw new ValidationError('Choose a password different from the current one');
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  await db
+    .update(users)
+    .set({ passwordHash, mustChangePassword: false, updatedAt: new Date() })
+    .where(eq(users.id, user.id));
+  await revokeAllRefreshTokensForUser(user.id);
+
+  await recordAuditLog({
+    req,
+    userId: user.id,
+    carWashId: user.carWashId,
+    action: AUDIT_ACTIONS.PASSWORD_RESET,
+    entityType: 'USER',
+    entityId: user.id,
+    metadata: { selfService: true },
+  });
+
+  return issueTokensForUser(user.id, user.carWashId, user.roleId, user.role.name, req);
 }

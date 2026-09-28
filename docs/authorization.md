@@ -22,9 +22,16 @@ erDiagram
   (`SUPER_ADMIN`, `OWNER`, `MANAGER`, `STAFF`, `CUSTOMER`, seeded from
   `src/constants/roles.ts`). Rows with a `car_wash_id` are **custom roles**
   created by an owner/manager for their own tenant (e.g. "Receptionist").
-- `role_permissions` is the many-to-many join actually consulted at request
-  time - `getPermissionKeysForRole(roleId)` joins it to `permissions` and
-  returns a flat `string[]` of permission keys.
+- `role_permissions` holds each role's default permissions.
+- `role_overrides` / `role_override_permissions` let a car wash customise a
+  **system** role for itself (e.g. its STAFF can't update orders) without
+  touching other tenants. `PATCH /roles/{id}` on a system role writes the
+  caller's override (permissions only - built-in roles can't be renamed);
+  `POST /roles/{id}/reset` removes it. Role responses include `isCustomized`.
+- At request time `getEffectivePermissionKeys(roleId, carWashId)` returns the
+  car wash's override for the role if one exists, else the role's defaults, as
+  a flat `string[]` of permission keys. The middleware, `/auth/me` and role
+  assignment checks all use it.
 
 ## Middleware
 
@@ -65,12 +72,15 @@ When an OWNER/MANAGER creates a role or assigns a role to a user, the service
 layer (`role.service.ts` → `assertDelegatablePermissions`,
 `user.service.ts` → `assertCanAssignRole`) checks that:
 
-1. Every permission being granted is already held by the acting user
-   (`req.user.permissions`), unless the acting user is `SUPER_ADMIN`.
+1. Every permission being *added* is already held by the acting user
+   (`req.user.permissions`), unless the acting user is `SUPER_ADMIN`. Removing
+   permissions is always allowed.
 2. The role being assigned is either a global template or belongs to the
    acting user's own car wash.
 3. The `SUPER_ADMIN` role itself can only be assigned by an existing
-   `SUPER_ADMIN`.
+   `SUPER_ADMIN`, and no tenant can customise it.
+4. Nobody can change the permissions of their own role, so an owner can't lock
+   everyone out by removing `ROLES_UPDATE` from `OWNER`.
 
 This directly enforces spec section 12/13: "Owner cannot ... grant permissions
 beyond their own allowed permission scope."

@@ -15,6 +15,13 @@
       "when": 1790530473712,
       "tag": "0001_taxi_rates",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790612431569,
+      "tag": "0002_role_overrides_and_password_flows",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,14 @@ const envSchema = z.object({
   JWT_RESET_SECRET: z.string().min(1, 'JWT_RESET_SECRET is required'),
   ACCESS_TOKEN_EXPIRES_IN: z.string().default('15m'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
+  /** How long a forgot-password code stays valid. */
   RESET_TOKEN_EXPIRES_IN: z.string().default('30m'),
+  /**
+   * A fixed code accepted by /auth/reset-password (after a code was requested) so testers
+   * don't need email. Defaults to 1111 outside production; empty disables it. Setting it
+   * in production lets anyone who can request a code reset any account - testing only.
+   */
+  DEV_RESET_CODE: z.string().optional(),
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.string().default('info'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000),
@@ -20,6 +27,8 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   /** Per-user limit for authenticated requests (many staff can share one IP on a shop's Wi-Fi). */
   RATE_LIMIT_USER_MAX: z.coerce.number().default(1000),
+  /** Per-IP limit for login / refresh / reset-password / change-password. */
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().default(20),
   FORGOT_PASSWORD_RATE_LIMIT_MAX: z.coerce.number().default(5),
   MAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
   MAIL_FROM: z.string().default('no-reply@carwash.local'),
@@ -38,5 +47,9 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data;
+export const env = {
+  ...parsed.data,
+  DEV_RESET_CODE:
+    parsed.data.DEV_RESET_CODE ?? (parsed.data.NODE_ENV === 'production' ? '' : '1111'),
+};
 export type Env = typeof env;

@@ -67,11 +67,21 @@ router.post(
  *   patch:
  *     tags: [Roles]
  *     summary: Update a role's name, description, or permissions
+ *     description: For built-in (system) roles only permissionIds can change, and the change applies to your car wash only (the role's permissions list and isCustomized reflect it; POST /roles/{id}/reset undoes it). You can't change your own role's permissions, and can only add permissions you hold yourself.
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               permissionIds: { type: array, items: { type: string, format: uuid } }
  *     responses:
  *       200: { description: Role updated }
  *   delete:
@@ -96,6 +106,27 @@ router.patch(
   requirePermission(PERMISSIONS.ROLES_UPDATE),
   validate({ params: roleIdParamSchema, body: updateRoleSchema }),
   roleController.updateRole,
+);
+/**
+ * @openapi
+ * /roles/{id}/reset:
+ *   post:
+ *     tags: [Roles]
+ *     summary: Reset a built-in role to its default permissions for your car wash
+ *     description: Removes your car wash's customised permission set for a system role (see PATCH /roles/{id}).
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Role reset to defaults }
+ */
+router.post(
+  '/:id/reset',
+  requirePermission(PERMISSIONS.ROLES_UPDATE),
+  validate({ params: roleIdParamSchema }),
+  roleController.resetRole,
 );
 router.delete(
   '/:id',

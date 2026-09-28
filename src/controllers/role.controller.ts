@@ -23,6 +23,11 @@ export const updateRole = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, role);
 });
 
+export const resetRole = asyncHandler(async (req: Request, res: Response) => {
+  const role = await roleService.resetRole(req.user!, req.params.id, req);
+  sendSuccess(res, role);
+});
+
 export const deleteRole = asyncHandler(async (req: Request, res: Response) => {
   await roleService.deleteRole(req.user!, req.params.id, req);
   sendSuccess(res, { message: 'Role deleted successfully' });

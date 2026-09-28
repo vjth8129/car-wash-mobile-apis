@@ -40,6 +40,44 @@ export const rolePermissions = pgTable(
   (table) => [uniqueIndex('role_permissions_unique_idx').on(table.roleId, table.permissionId)],
 );
 
+/**
+ * A car wash's own permission set for a global/system role (e.g. its STAFF may differ
+ * from another car wash's STAFF). When a row exists for (carWashId, roleId), its
+ * permissions replace the role's defaults for users of that car wash.
+ */
+export const roleOverrides = pgTable(
+  'role_overrides',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    carWashId: uuid('car_wash_id')
+      .notNull()
+      .references(() => carWashes.id, { onDelete: 'cascade' }),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => roles.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('role_overrides_car_wash_role_idx').on(table.carWashId, table.roleId)],
+);
+
+export const roleOverridePermissions = pgTable(
+  'role_override_permissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    overrideId: uuid('override_id')
+      .notNull()
+      .references(() => roleOverrides.id, { onDelete: 'cascade' }),
+    permissionId: uuid('permission_id')
+      .notNull()
+      .references(() => permissions.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('role_override_permissions_unique_idx').on(table.overrideId, table.permissionId),
+  ],
+);
+
 export type Role = typeof roles.$inferSelect;
 export type NewRole = typeof roles.$inferInsert;
 export type RolePermission = typeof rolePermissions.$inferSelect;

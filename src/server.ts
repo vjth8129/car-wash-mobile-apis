@@ -16,6 +16,11 @@ async function start() {
   const server = app.listen(env.PORT, () => {
     logger.info(`Car Wash API listening on port ${env.PORT} (${env.NODE_ENV})`);
     logger.info(`Swagger docs available at http://localhost:${env.PORT}/api/docs`);
+    if (env.DEV_RESET_CODE && env.NODE_ENV === 'production') {
+      logger.warn(
+        'DEV_RESET_CODE is set in production: anyone can reset a password with that code. Remove it before real use.',
+      );
+    }
   });
 
   const shutdown = async (signal: string) => {

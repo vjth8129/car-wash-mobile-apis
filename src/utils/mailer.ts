@@ -35,10 +35,10 @@ class SmtpMailProvider implements MailProvider {
 export const mailer: MailProvider =
   env.MAIL_PROVIDER === 'smtp' ? new SmtpMailProvider() : new ConsoleMailProvider();
 
-export async function sendPasswordResetEmail(to: string, resetLink: string): Promise<void> {
+export async function sendPasswordResetCodeEmail(to: string, code: string): Promise<void> {
   await mailer.send({
     to,
-    subject: 'Reset your Car Wash account password',
-    text: `We received a request to reset your password. This link expires shortly and can be used once:\n\n${resetLink}\n\nIf you did not request this, you can safely ignore this email.`,
+    subject: 'Your Car Wash password reset code',
+    text: `Your password reset code is ${code}. It expires shortly and can be used once.\n\nIf you did not request this, you can safely ignore this email.`,
   });
 }

@@ -19,6 +19,8 @@ async function truncateAll() {
       menu_permissions,
       menus,
       role_permissions,
+      role_override_permissions,
+      role_overrides,
       users,
       roles,
       car_washes,

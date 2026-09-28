@@ -1,6 +1,15 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { roles, rolePermissions, permissions, Role, NewRole } from '../db/schema';
+import {
+  roles,
+  rolePermissions,
+  roleOverrides,
+  roleOverridePermissions,
+  permissions,
+  Role,
+  NewRole,
+} from '../db/schema';
+import type { PermissionSummary } from './permission.repository';
 
 export async function findRoleById(id: string) {
   return db.query.roles.findFirst({
@@ -54,6 +63,67 @@ export async function setRolePermissions(roleId: string, permissionIds: string[]
         .values(permissionIds.map((permissionId) => ({ roleId, permissionId })));
     }
   });
+}
+
+/** All of a car wash's role overrides, keyed by role id. */
+export async function listRoleOverridesForCarWash(
+  carWashId: string,
+): Promise<Map<string, PermissionSummary[]>> {
+  const rows = await db
+    .select({
+      roleId: roleOverrides.roleId,
+      permissionId: permissions.id,
+      key: permissions.key,
+      name: permissions.name,
+    })
+    .from(roleOverrides)
+    .leftJoin(roleOverridePermissions, eq(roleOverridePermissions.overrideId, roleOverrides.id))
+    .leftJoin(permissions, eq(roleOverridePermissions.permissionId, permissions.id))
+    .where(eq(roleOverrides.carWashId, carWashId));
+
+  const map = new Map<string, PermissionSummary[]>();
+  for (const row of rows) {
+    const list = map.get(row.roleId) ?? [];
+    // leftJoin: an override with zero permissions still yields one row with nulls
+    if (row.permissionId && row.key && row.name) {
+      list.push({ id: row.permissionId, key: row.key, name: row.name });
+    }
+    map.set(row.roleId, list);
+  }
+  return map;
+}
+
+/** Replace a car wash's permission set for a role (creating the override if needed). */
+export async function setRoleOverride(
+  carWashId: string,
+  roleId: string,
+  permissionIds: string[],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [override] = await tx
+      .insert(roleOverrides)
+      .values({ carWashId, roleId })
+      .onConflictDoUpdate({
+        target: [roleOverrides.carWashId, roleOverrides.roleId],
+        set: { updatedAt: new Date() },
+      })
+      .returning();
+    await tx
+      .delete(roleOverridePermissions)
+      .where(eq(roleOverridePermissions.overrideId, override.id));
+    if (permissionIds.length > 0) {
+      await tx
+        .insert(roleOverridePermissions)
+        .values(permissionIds.map((permissionId) => ({ overrideId: override.id, permissionId })));
+    }
+  });
+}
+
+/** Drop a car wash's override so the role goes back to its default permissions. */
+export async function deleteRoleOverride(carWashId: string, roleId: string): Promise<void> {
+  await db
+    .delete(roleOverrides)
+    .where(and(eq(roleOverrides.carWashId, carWashId), eq(roleOverrides.roleId, roleId)));
 }
 
 export async function countUsersWithRole(roleId: string): Promise<number> {

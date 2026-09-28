@@ -19,7 +19,13 @@ export const forgotPasswordSchema = z.object({
 });
 
 export const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'token is required'),
+  username: z.string().min(1, 'Username is required'),
+  code: z.string().regex(/^\d{4,6}$/, 'Enter the code you received'),
+  newPassword: z.string().refine(isPasswordComplex, { message: PASSWORD_COMPLEXITY_MESSAGE }),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: z.string().refine(isPasswordComplex, { message: PASSWORD_COMPLEXITY_MESSAGE }),
 });
 

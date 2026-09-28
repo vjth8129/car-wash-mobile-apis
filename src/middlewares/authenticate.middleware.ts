@@ -1,8 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
-import { UnauthorizedError } from '../utils/errors';
+import { AppError, UnauthorizedError } from '../utils/errors';
 import { findUserById } from '../repositories/user.repository';
-import { getPermissionKeysForRole } from '../repositories/permission.repository';
+import { getEffectivePermissionKeys } from '../repositories/permission.repository';
 import { asyncHandler } from '../utils/async-handler';
 
 /**
@@ -12,6 +12,9 @@ import { asyncHandler } from '../utils/async-handler';
  * permission changes made by an admin take effect immediately instead of waiting
  * for the access token to expire.
  */
+/** The only endpoints usable until an admin-set password has been changed. */
+const ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED = ['/api/v1/auth/me', '/api/v1/auth/change-password'];
+
 export const authenticate = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {
     const header = req.headers.authorization;
@@ -42,7 +45,19 @@ export const authenticate = asyncHandler(
       throw new UnauthorizedError('Car wash account is not active');
     }
 
-    const permissions = await getPermissionKeysForRole(user.roleId);
+    if (
+      user.mustChangePassword &&
+      !ALLOWED_WHILE_PASSWORD_CHANGE_REQUIRED.includes(req.originalUrl.split('?')[0])
+    ) {
+      throw new AppError(
+        'You must change your password before continuing',
+        403,
+        'PASSWORD_CHANGE_REQUIRED',
+      );
+    }
+
+    // The car wash's customised permission set for this role, if it has one.
+    const permissions = await getEffectivePermissionKeys(user.roleId, user.carWashId);
 
     req.user = {
       id: user.id,

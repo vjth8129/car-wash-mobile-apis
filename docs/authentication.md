@@ -54,7 +54,7 @@ token is worthless to an attacker, and reuse of a revoked token is detectable.
 require the access token to still be valid (a user should be able to log out
 even with an expired access token).
 
-## Forgot password / reset password
+## Forgot password / reset password (code)
 
 ```mermaid
 sequenceDiagram
@@ -65,39 +65,57 @@ sequenceDiagram
 
     C->>A: POST /auth/forgot-password {username}
     A->>DB: find user (does NOT reveal whether found)
-    A->>DB: invalidate any existing active reset tokens for user
-    A->>DB: insert password_reset_tokens row (hash of opaque secret)
-    A->>Mail: send reset link containing raw token
+    A->>DB: invalidate any existing active reset requests for user
+    A->>DB: insert password_reset_tokens row (hash of userId + 6-digit code)
+    A->>Mail: send the code
     A-->>C: 200 generic message (always, regardless of outcome)
 
-    C->>A: POST /auth/reset-password {token, newPassword}
-    A->>DB: find valid (unused, unexpired) token by hash
-    A->>DB: transaction: update password hash, mark token used
+    C->>A: POST /auth/reset-password {username, code, newPassword}
+    A->>DB: newest unused, unexpired request for that user
+    A->>A: compare code (or DEV_RESET_CODE); wrong -> attempts+1, burned at 5
+    A->>DB: transaction: update password hash (+ clear must_change_password), mark used
     A->>DB: revoke all refresh tokens for that user
     A-->>C: 200 success
 ```
 
-Design decisions (documented per the "choose a production-safe default and
-record it" instruction):
+Design decisions:
 
 - **No user enumeration**: `/auth/forgot-password` returns the same `200`
   response and message whether the username exists, is inactive, or doesn't
-  exist. Timing differences are not addressed (out of scope for this project)
-  but no *content* difference exists.
-- **Hashed-at-rest tokens**: like refresh tokens, only `sha256(secret)` is
-  stored; the raw token only ever exists in the (dev-logged or emailed) link.
-- **One-time use**: `password_reset_tokens.used_at` is set transactionally with
-  the password change, and any previously-issued active token for that user is
-  invalidated when a new one is requested.
+  exist. `reset-password` gives the same "Invalid or expired code" error for an
+  unknown user, no pending request, a wrong code or an expired code.
+- **Short codes, bounded guessing**: codes are 6 random digits (`crypto.randomInt`),
+  stored only as `sha256(userId + ":" + code)`. Each request allows 5 wrong
+  attempts (`password_reset_tokens.attempts`) before it's burned, on top of the
+  per-IP `authRateLimiter` (`AUTH_RATE_LIMIT_MAX`, default 20 per 15 min).
+- **One-time use**: `used_at` is set transactionally with the password change,
+  and any previously-issued active request is invalidated when a new one is made.
 - **Expiration**: `RESET_TOKEN_EXPIRES_IN` (default 30m).
+- **Dev code**: `DEV_RESET_CODE` (default `1111` outside production, unset in
+  production) is accepted in place of the real code, but only while the user
+  has a live request - so testers still go through "Send code". Setting it in
+  production lets anyone who can request a code reset any account; the server
+  logs a warning at startup if you do.
 - **Session invalidation**: all of the user's refresh tokens are revoked on a
   successful reset, forcing re-login everywhere.
 - **Email abstraction**: `src/utils/mailer.ts` exposes a `MailProvider`
-  interface. `MAIL_PROVIDER=console` (default, development) logs the reset link
-  instead of sending an email. `MAIL_PROVIDER=smtp` is a stub production
-  integration point - wire in `nodemailer` (or your provider's SDK) there.
+  interface. `MAIL_PROVIDER=console` (default, development) logs the email
+  instead of sending it; outside production, the code is also logged for users
+  with no email on file. `MAIL_PROVIDER=smtp` is a stub production integration
+  point - wire in `nodemailer` (or your provider's SDK) there.
 - **Rate limiting**: `forgotPasswordRateLimiter` limits requests per
   `ip + username` combination (`FORGOT_PASSWORD_RATE_LIMIT_MAX`, default 5/hour).
+
+## Admin-set passwords must be changed
+
+When an owner/manager creates a user (`POST /users`) or resets someone else's
+password (`POST /users/{id}/reset-password`), `users.must_change_password` is
+set. Login and `/auth/me` return `mustChangePassword: true`, and the
+`authenticate` middleware rejects every other endpoint with
+`403 PASSWORD_CHANGE_REQUIRED` until the user calls
+`POST /auth/change-password {currentPassword, newPassword}`. That clears the
+flag, revokes the user's other sessions and returns a fresh token pair. The
+code-based reset above also clears it (the user chose that password).
 
 ## Client session bootstrap
 

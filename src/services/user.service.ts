@@ -3,6 +3,7 @@ import * as roleRepo from '../repositories/role.repository';
 import { revokeAllRefreshTokensForUser } from '../repositories/refresh-token.repository';
 import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors';
 import { hashPassword } from '../utils/password';
+import { getEffectivePermissionKeys } from '../repositories/permission.repository';
 import { buildPagination } from '../utils/api-response';
 import { PaginationQuery } from '../utils/pagination';
 import { AuthenticatedUser } from '../types/express';
@@ -31,7 +32,8 @@ async function assertCanAssignRole(actingUser: AuthenticatedUser, roleId: string
     if (role.carWashId !== null && role.carWashId !== actingUser.carWashId) {
       throw new ForbiddenError('You cannot assign a role belonging to another car wash');
     }
-    const rolePermissionKeys = (role.rolePermissions ?? []).map((rp: any) => rp.permission.key);
+    // What the role grants in the acting user's car wash (their override, if any).
+    const rolePermissionKeys = await getEffectivePermissionKeys(role.id, actingUser.carWashId);
     const notOwned = rolePermissionKeys.filter(
       (key: string) => !actingUser.permissions.includes(key),
     );
@@ -107,6 +109,8 @@ export async function createUser(
     phone: input.phone,
     roleId: input.roleId,
     carWashId,
+    // The admin chose this password, so the user must pick their own on first sign-in.
+    mustChangePassword: true,
   });
 
   await recordAuditLog({
@@ -213,7 +217,8 @@ export async function resetUserPassword(
   }
 
   const passwordHash = await hashPassword(newPassword);
-  await userRepo.updateUser(id, { passwordHash });
+  // Someone else set it -> the user must change it at next sign-in.
+  await userRepo.updateUser(id, { passwordHash, mustChangePassword: user.id !== actingUser.id });
   await revokeAllRefreshTokensForUser(id);
   await recordAuditLog({
     req,

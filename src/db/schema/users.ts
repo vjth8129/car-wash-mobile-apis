@@ -1,4 +1,12 @@
-import { pgTable, uuid, varchar, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  varchar,
+  timestamp,
+  uniqueIndex,
+  index,
+  boolean,
+} from 'drizzle-orm/pg-core';
 import { carWashes } from './car-washes';
 import { roles } from './roles';
 import { userStatusEnum } from './enums';
@@ -18,6 +26,8 @@ export const users = pgTable(
     email: varchar('email', { length: 150 }),
     phone: varchar('phone', { length: 30 }),
     status: userStatusEnum('status').notNull().default('ACTIVE'),
+    /** Set when an admin sets the password (create / reset); cleared once the user changes it. */
+    mustChangePassword: boolean('must_change_password').notNull().default(false),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

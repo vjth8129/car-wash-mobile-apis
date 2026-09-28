@@ -9,6 +9,7 @@ import {
   logoutSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
 } from '../validators/auth.validator';
 
 const router = Router();
@@ -125,8 +126,8 @@ router.get('/me', authenticate, authController.me);
  * /auth/forgot-password:
  *   post:
  *     tags: [Authentication]
- *     summary: Request a password reset
- *     description: Always returns a generic success message regardless of whether the username exists, to avoid user enumeration. Rate-limited.
+ *     summary: Request a password reset code
+ *     description: Sends a 6-digit code to the user's email (logged by the server when MAIL_PROVIDER=console or, outside production, when the user has no email). Redeem it with POST /auth/reset-password. Always returns a generic success message regardless of whether the username exists, to avoid user enumeration. Rate-limited.
  *     security: []
  *     requestBody:
  *       required: true
@@ -153,7 +154,8 @@ router.post(
  * /auth/reset-password:
  *   post:
  *     tags: [Authentication]
- *     summary: Reset password using a one-time reset token
+ *     summary: Reset password using the code from /auth/forgot-password
+ *     description: The code is single-use, expires after RESET_TOKEN_EXPIRES_IN and is burned after 5 wrong attempts. Outside production the dev code (DEV_RESET_CODE, default 1111) is also accepted once a code has been requested.
  *     security: []
  *     requestBody:
  *       required: true
@@ -161,9 +163,10 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [token, newPassword]
+ *             required: [username, code, newPassword]
  *             properties:
- *               token: { type: string }
+ *               username: { type: string }
+ *               code: { type: string, example: "482913" }
  *               newPassword: { type: string, format: password }
  *     responses:
  *       200:
@@ -176,6 +179,37 @@ router.post(
   authRateLimiter,
   validate({ body: resetPasswordSchema }),
   authController.resetPassword,
+);
+
+/**
+ * @openapi
+ * /auth/change-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Change your own password
+ *     description: Required when login/me returns mustChangePassword=true (an admin set the password); until then other endpoints return 403 PASSWORD_CHANGE_REQUIRED. Signs out other sessions and returns a fresh token pair.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword]
+ *             properties:
+ *               currentPassword: { type: string, format: password }
+ *               newPassword: { type: string, format: password }
+ *     responses:
+ *       200:
+ *         description: Password changed; body contains new accessToken and refreshToken
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.post(
+  '/change-password',
+  authRateLimiter,
+  authenticate,
+  validate({ body: changePasswordSchema }),
+  authController.changePassword,
 );
 
 export default router;
