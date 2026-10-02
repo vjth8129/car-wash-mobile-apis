@@ -20,6 +20,16 @@ Every tenant-owned table (`users`, `services`, `customers`, `vehicles`,
 `SUPER_ADMIN` users (and only they) have `car_wash_id = NULL`, since they
 operate at the platform level across every tenant.
 
+## Onboarding a car wash
+
+A platform admin onboards a tenant with `POST /car-washes`, optionally passing
+`owner: { name, phone, username, password, email? }`. The car wash and its first
+`OWNER` account are created in one transaction (nothing is created if the phone or
+username is taken). The owner signs in with their mobile number, must replace the
+admin-chosen password, and then adds their own managers and staff, who are scoped
+to that car wash automatically. Because a mobile number is unique across all car
+washes, signing in always lands the user in exactly one car wash.
+
 ## The rule: `carWashId` is always derived server-side
 
 > A request body containing `"carWashId": "another-car-wash-id"` must never

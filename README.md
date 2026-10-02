@@ -121,10 +121,12 @@ never duplicates roles, permissions, menus, car washes, users, or services).
 
 Seeds:
 
-- Platform super admin: **`superadmin` / `SuperAdmin@123`**
+- Platform super admin: **`9000000100` / `SuperAdmin@123`** (username `superadmin`)
 - Car wash **Sparkle Car Wash** (`SPARKLE001`, ACTIVE, INR, Asia/Kolkata)
-- **`owner` / `Owner@123`**, **`manager` / `Manager@123`**, **`staff` / `Staff@123`**
-  (all under Sparkle Car Wash)
+- **`9000000101` / `Owner@123`**, **`9000000102` / `Manager@123`**,
+  **`9000000103` / `Staff@123`** (usernames `owner`, `manager`, `staff`; all under
+  Sparkle Car Wash). Users sign in with their mobile number; the username still
+  works for older accounts.
 - All permissions from spec section 6, system roles (`SUPER_ADMIN`, `OWNER`,
   `MANAGER`, `STAFF`, `CUSTOMER`) with their role-permission mappings
 - The dynamic menu tree (Dashboard, Operations > Bookings/Orders/Customers/Vehicles,
@@ -200,7 +202,13 @@ See [docs/multi-tenancy.md](docs/multi-tenancy.md).
 # Login
 curl -X POST http://localhost:5000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"owner","password":"Owner@123"}'
+  -d '{"phone":"9000000101","password":"Owner@123"}'
+
+# Onboard another car wash with its first owner (platform admin only).
+# The owner signs in with their mobile number and must change the password.
+curl -X POST http://localhost:5000/api/v1/car-washes \
+  -H "Authorization: Bearer $SUPERADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Aqua Shine","code":"AQUA001","owner":{"name":"Aqua Owner","phone":"9000000201","username":"aqua_owner","password":"Welcome@123"}}'
 
 # Session bootstrap
 curl http://localhost:5000/api/v1/auth/me   -H "Authorization: Bearer $TOKEN"

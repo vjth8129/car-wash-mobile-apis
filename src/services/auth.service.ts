@@ -2,7 +2,14 @@ import { Request } from 'express';
 import { db } from '../db';
 import { refreshTokens, passwordResetTokens, users } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { findUserByUsername, findUserById, updateLastLogin } from '../repositories/user.repository';
+import {
+  findUserByUsername,
+  findUserByPhone,
+  findUserById,
+  updateLastLogin,
+} from '../repositories/user.repository';
+import { looksLikePhone, normalizePhone } from '../utils/phone';
+import type { AccountIdentifier } from '../validators/auth.validator';
 import { getEffectivePermissionKeys } from '../repositories/permission.repository';
 import {
   createRefreshToken,
@@ -67,6 +74,7 @@ async function issueTokensForUser(
 function serializeUser(user: {
   id: string;
   username: string;
+  phone: string | null;
   name: string;
   carWashId: string | null;
   mustChangePassword: boolean;
@@ -75,6 +83,7 @@ function serializeUser(user: {
   return {
     id: user.id,
     username: user.username,
+    phone: user.phone,
     name: user.name,
     role: user.role.name,
     carWashId: user.carWashId,
@@ -96,16 +105,35 @@ function codesMatch(a: string, b: string): boolean {
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
-export async function login(username: string, password: string, req?: Request) {
-  const user = await findUserByUsername(username);
+/**
+ * Finds the account a sign-in / password-reset request refers to: by mobile number, or by
+ * username for older accounts without one. A phone typed into the username field (clients
+ * predating phone login) is matched as a phone too.
+ */
+async function findAccount({ phone, username }: AccountIdentifier) {
+  if (phone) {
+    const normalized = normalizePhone(phone);
+    return normalized ? findUserByPhone(normalized) : undefined;
+  }
+  if (!username) return undefined;
+  const byUsername = await findUserByUsername(username);
+  if (byUsername || !looksLikePhone(username)) return byUsername;
+  const normalized = normalizePhone(username);
+  return normalized ? findUserByPhone(normalized) : undefined;
+}
+
+const INVALID_CREDENTIALS = 'Invalid mobile number or password';
+
+export async function login(identifier: AccountIdentifier, password: string, req?: Request) {
+  const user = await findAccount(identifier);
   if (!user) {
-    throw new UnauthorizedError('Invalid username or password');
+    throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
   if (user.status !== 'ACTIVE') {
-    throw new UnauthorizedError('Invalid username or password');
+    throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
   if (user.carWash && user.carWash.status !== 'ACTIVE') {
-    throw new UnauthorizedError('Invalid username or password');
+    throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
 
   const valid = await verifyPassword(user.passwordHash, password);
@@ -118,7 +146,7 @@ export async function login(username: string, password: string, req?: Request) {
       entityType: 'USER',
       entityId: user.id,
     });
-    throw new UnauthorizedError('Invalid username or password');
+    throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
 
   const tokens = await issueTokensForUser(
@@ -157,6 +185,9 @@ export async function refreshTokensForClient(refreshToken: string, req?: Request
   const user = await findUserById(row.userId);
   if (!user || user.status !== 'ACTIVE') {
     throw new UnauthorizedError('User account is not active');
+  }
+  if (user.carWash && user.carWash.status !== 'ACTIVE') {
+    throw new UnauthorizedError('Car wash account is not active');
   }
 
   const secret = generateOpaqueToken();
@@ -234,11 +265,11 @@ export async function getCurrentUserContext(userId: string) {
   };
 }
 
-export async function forgotPassword(username: string, req?: Request): Promise<void> {
-  const user = await findUserByUsername(username);
-  // Always behave identically whether or not the username exists, to avoid user enumeration.
+export async function forgotPassword(identifier: AccountIdentifier, req?: Request): Promise<void> {
+  const user = await findAccount(identifier);
+  // Always behave identically whether or not the account exists, to avoid user enumeration.
   if (!user || user.status !== 'ACTIVE') {
-    logger.debug({ username }, 'Forgot-password requested for unknown/inactive username');
+    logger.debug(identifier, 'Forgot-password requested for unknown/inactive account');
     return;
   }
 
@@ -273,12 +304,12 @@ export async function forgotPassword(username: string, req?: Request): Promise<v
 }
 
 export async function resetPassword(
-  input: { username: string; code: string; newPassword: string },
+  input: AccountIdentifier & { code: string; newPassword: string },
   req?: Request,
 ): Promise<void> {
   const invalid = () => new ValidationError('Invalid or expired code');
 
-  const user = await findUserByUsername(input.username);
+  const user = await findAccount(input);
   if (!user || user.status !== 'ACTIVE') throw invalid();
 
   // A code must have been requested (and still be live) - this includes the dev code.

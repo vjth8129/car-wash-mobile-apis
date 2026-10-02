@@ -22,6 +22,27 @@
       "when": 1790612431569,
       "tag": "0002_role_overrides_and_password_flows",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790911187034,
+      "tag": "0003_phone_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790916933042,
+      "tag": "0004_payment_qr",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790917622174,
+      "tag": "0005_simplify_order_statuses",
+      "breakpoints": true
     }
   ]
 }

@@ -64,8 +64,7 @@ export async function listOrders(options: ListOrdersOptions) {
     conditions.push(
       eq(
         orders.status,
-        options.status as
-          'CREATED' | 'CHECKED_IN' | 'WASHING' | 'READY' | 'COMPLETED' | 'CANCELLED',
+        options.status as 'CREATED' | 'WASHING' | 'READY' | 'COMPLETED' | 'CANCELLED',
       ),
     );
   }

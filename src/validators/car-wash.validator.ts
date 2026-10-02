@@ -1,4 +1,15 @@
 import { z } from 'zod';
+import { PASSWORD_COMPLEXITY_MESSAGE, isPasswordComplex } from '../utils/password';
+import { phoneField } from './phone.validator';
+
+/** The first OWNER account, created together with the car wash when onboarding a tenant. */
+const onboardingOwnerSchema = z.object({
+  name: z.string().min(2).max(150),
+  phone: phoneField,
+  username: z.string().min(3).max(100),
+  password: z.string().refine(isPasswordComplex, { message: PASSWORD_COMPLEXITY_MESSAGE }),
+  email: z.string().email().optional(),
+});
 
 export const createCarWashSchema = z.object({
   name: z.string().min(2).max(150),
@@ -20,6 +31,10 @@ export const createCarWashSchema = z.object({
   logo: z.string().optional(),
   timezone: z.string().default('Asia/Kolkata'),
   currency: z.string().default('INR'),
+});
+
+export const onboardCarWashSchema = createCarWashSchema.extend({
+  owner: onboardingOwnerSchema.optional(),
 });
 
 export const updateCarWashSchema = createCarWashSchema.partial().extend({

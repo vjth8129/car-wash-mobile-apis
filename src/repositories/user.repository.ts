@@ -18,6 +18,17 @@ export async function findUserByUsername(username: string): Promise<UserWithRole
   return row as UserWithRole | undefined;
 }
 
+export async function findUserByPhone(phone: string): Promise<UserWithRole | undefined> {
+  const row = await db.query.users.findFirst({
+    where: and(eq(users.phone, phone), isNull(users.deletedAt)),
+    with: {
+      role: { columns: { id: true, name: true, carWashId: true } },
+      carWash: { columns: { id: true, name: true, status: true } },
+    },
+  });
+  return row as UserWithRole | undefined;
+}
+
 export async function findUserById(id: string): Promise<UserWithRole | undefined> {
   const row = await db.query.users.findFirst({
     where: and(eq(users.id, id), isNull(users.deletedAt)),
@@ -71,7 +82,12 @@ export async function listUsers(options: ListUsersOptions) {
   if (options.search) {
     const term = `%${options.search}%`;
     conditions.push(
-      or(ilike(users.name, term), ilike(users.username, term), ilike(users.email, term))!,
+      or(
+        ilike(users.name, term),
+        ilike(users.username, term),
+        ilike(users.email, term),
+        ilike(users.phone, term),
+      )!,
     );
   }
   const where = and(...conditions);

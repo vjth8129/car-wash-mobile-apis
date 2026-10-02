@@ -19,8 +19,8 @@ const router = Router();
  * /auth/login:
  *   post:
  *     tags: [Authentication]
- *     summary: Login with username and password
- *     description: Authenticates a user and returns a short-lived access token and a refresh token.
+ *     summary: Login with mobile number and password
+ *     description: Authenticates a user and returns a short-lived access token and a refresh token. Send `phone` (any common format, e.g. "98765 43210" or "+919876543210"); `username` is accepted instead for older accounts without a phone. Exactly one of the two is required.
  *     security: []
  *     requestBody:
  *       required: true
@@ -28,8 +28,9 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [username, password]
+ *             required: [password]
  *             properties:
+ *               phone: { type: string, example: "+919000000101" }
  *               username: { type: string, example: owner }
  *               password: { type: string, format: password, example: "Owner@123" }
  *     responses:
@@ -51,6 +52,7 @@ const router = Router();
  *                       properties:
  *                         id: { type: string, format: uuid }
  *                         username: { type: string }
+ *                         phone: { type: string, nullable: true }
  *                         name: { type: string }
  *                         role: { type: string }
  *                         carWashId: { type: string, format: uuid, nullable: true }
@@ -127,7 +129,7 @@ router.get('/me', authenticate, authController.me);
  *   post:
  *     tags: [Authentication]
  *     summary: Request a password reset code
- *     description: Sends a 6-digit code to the user's email (logged by the server when MAIL_PROVIDER=console or, outside production, when the user has no email). Redeem it with POST /auth/reset-password. Always returns a generic success message regardless of whether the username exists, to avoid user enumeration. Rate-limited.
+ *     description: Sends a 6-digit code to the user's email (logged by the server when MAIL_PROVIDER=console or, outside production, when the user has no email). Redeem it with POST /auth/reset-password. Always returns a generic success message regardless of whether the account exists, to avoid user enumeration. Rate-limited.
  *     security: []
  *     requestBody:
  *       required: true
@@ -135,8 +137,9 @@ router.get('/me', authenticate, authController.me);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [username]
+ *             description: Exactly one of phone / username.
  *             properties:
+ *               phone: { type: string }
  *               username: { type: string }
  *     responses:
  *       200:
@@ -163,8 +166,10 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [username, code, newPassword]
+ *             description: Exactly one of phone / username, matching the forgot-password request.
+ *             required: [code, newPassword]
  *             properties:
+ *               phone: { type: string }
  *               username: { type: string }
  *               code: { type: string, example: "482913" }
  *               newPassword: { type: string, format: password }

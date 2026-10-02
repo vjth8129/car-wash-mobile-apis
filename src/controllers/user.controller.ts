@@ -6,14 +6,15 @@ import * as userService from '../services/user.service';
 
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   const pagination = parsePaginationQuery(req.query as Record<string, unknown>);
-  const { search, status } = req.query as { search?: string; status?: string };
+  const { search, status, carWashId } = req.query as {
+    search?: string;
+    status?: string;
+    carWashId?: string;
+  };
   const { rows, pagination: paginationResult } = await userService.listUsers(
     req.user!,
     pagination,
-    {
-      search,
-      status,
-    },
+    { search, status, carWashId },
   );
   sendList(res, rows, paginationResult);
 });

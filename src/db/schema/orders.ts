@@ -15,6 +15,7 @@ export const orders = pgTable(
       .notNull()
       .references(() => bookings.id, { onDelete: 'restrict' }),
     status: orderStatusEnum('status').notNull().default('CREATED'),
+    /** No longer set (the CHECKED_IN step was removed); kept for older orders. */
     checkedInAt: timestamp('checked_in_at', { withTimezone: true }),
     washStartedAt: timestamp('wash_started_at', { withTimezone: true }),
     readyAt: timestamp('ready_at', { withTimezone: true }),

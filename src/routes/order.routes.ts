@@ -23,7 +23,7 @@ router.use(authenticate);
  *     parameters:
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [CREATED, CHECKED_IN, WASHING, READY, COMPLETED, CANCELLED] }
+ *         schema: { type: string, enum: [CREATED, WASHING, READY, COMPLETED, CANCELLED] }
  *     responses:
  *       200: { description: List of orders }
  *   post:
@@ -71,7 +71,7 @@ router.post(
  *   patch:
  *     tags: [Orders]
  *     summary: Advance the order/job workflow status
- *     description: Valid transitions - CREATED→CHECKED_IN→WASHING→READY→COMPLETED, or →CANCELLED from any non-terminal state. The linked booking's status is kept in sync in the same transaction.
+ *     description: Valid transitions - CREATED ("Waiting")→WASHING→READY→COMPLETED, or →CANCELLED from any non-terminal state. CHECKED_IN is accepted as a legacy alias for WASHING (older app builds). The linked booking's status is kept in sync in the same transaction.
  *     parameters:
  *       - in: path
  *         name: id
@@ -85,7 +85,7 @@ router.post(
  *             type: object
  *             required: [status]
  *             properties:
- *               status: { type: string, enum: [CHECKED_IN, WASHING, READY, COMPLETED, CANCELLED] }
+ *               status: { type: string, enum: [WASHING, READY, COMPLETED, CANCELLED] }
  *     responses:
  *       200: { description: Order updated }
  */

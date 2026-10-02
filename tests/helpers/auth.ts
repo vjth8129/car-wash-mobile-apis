@@ -22,3 +22,11 @@ export async function loginAs(
 export function bearer(token: string): [string, string] {
   return ['Authorization', `Bearer ${token}`];
 }
+
+let phoneCounter = 0;
+/** A mobile number no other test user has (phones are unique across all car washes). */
+export function uniquePhone(): string {
+  phoneCounter += 1;
+  const suffix = `${Date.now() % 1_000_000}${phoneCounter % 100}`.padStart(8, '0').slice(-8);
+  return `+9177${suffix}`;
+}

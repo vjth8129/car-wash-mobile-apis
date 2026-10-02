@@ -98,9 +98,14 @@ if [ "${RUN_MIGRATE}" = true ]; then
   # Migrate with the new image *before* swapping containers: migrations are additive,
   # so the old code keeps working against the new schema until the restart.
   echo "==> Running migrations"
-  sudo docker compose -f docker-compose.prod.yml run --rm -T api node dist/db/migrate.js
+  # </dev/null: this script reaches the server on stdin (ssh ... bash -s), and `compose run`
+  # would otherwise swallow the rest of it - leaving the old container running.
+  sudo docker compose -f docker-compose.prod.yml run --rm -T api node dist/db/migrate.js </dev/null
 fi
-sudo docker compose -f docker-compose.prod.yml up -d
+# --force-recreate: always swap in the freshly built image, even if compose thinks
+# nothing changed.
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate
+sudo docker compose -f docker-compose.prod.yml ps
 REMOTE
 
 echo "==> Health check"

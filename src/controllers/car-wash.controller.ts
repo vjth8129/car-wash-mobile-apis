@@ -14,6 +14,10 @@ export const listCarWashes = asyncHandler(async (req: Request, res: Response) =>
   sendList(res, rows, paginationResult);
 });
 
+export const getPlatformStats = asyncHandler(async (_req: Request, res: Response) => {
+  sendSuccess(res, await carWashService.getPlatformStats());
+});
+
 export const getCarWash = asyncHandler(async (req: Request, res: Response) => {
   const carWash = await carWashService.getCarWash(req.params.id);
   sendSuccess(res, carWash);

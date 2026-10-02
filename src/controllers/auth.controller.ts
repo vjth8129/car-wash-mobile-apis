@@ -5,8 +5,8 @@ import * as authService from '../services/auth.service';
 import { UnauthorizedError } from '../utils/errors';
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { username, password } = req.body;
-  const result = await authService.login(username, password, req);
+  const { phone, username, password } = req.body;
+  const result = await authService.login({ phone, username }, password, req);
   sendSuccess(res, result);
 });
 
@@ -29,16 +29,16 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { username } = req.body;
-  await authService.forgotPassword(username, req);
+  const { phone, username } = req.body;
+  await authService.forgotPassword({ phone, username }, req);
   sendSuccess(res, {
-    message: 'If an account with that username exists, a reset code has been sent.',
+    message: 'If an account with those details exists, a reset code has been sent.',
   });
 });
 
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { username, code, newPassword } = req.body;
-  await authService.resetPassword({ username, code, newPassword }, req);
+  const { phone, username, code, newPassword } = req.body;
+  await authService.resetPassword({ phone, username, code, newPassword }, req);
   sendSuccess(res, { message: 'Password has been reset successfully' });
 });
 

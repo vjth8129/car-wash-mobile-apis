@@ -177,7 +177,7 @@ describe('Booking price snapshot', () => {
     expect(orderRes.body.data.booking.vehicleCategory).toBe('TAXI');
     expect(Number(orderRes.body.data.booking.price)).toBe(550);
 
-    for (const status of ['CHECKED_IN', 'WASHING', 'READY', 'COMPLETED']) {
+    for (const status of ['WASHING', 'READY', 'COMPLETED']) {
       const step = await request(app)
         .patch(`/api/v1/orders/${orderId}`)
         .set(...bearer(token))

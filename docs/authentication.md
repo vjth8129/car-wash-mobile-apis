@@ -8,14 +8,21 @@ sequenceDiagram
     participant A as API
     participant DB as PostgreSQL
 
-    C->>A: POST /auth/login {username, password}
-    A->>DB: find user by username (with role, car wash)
+    C->>A: POST /auth/login {phone, password}
+    A->>DB: find user by normalised phone (with role, car wash)
     DB-->>A: user row
     A->>A: argon2id verify(password, user.passwordHash)
     A->>DB: insert refresh_tokens row (hash of opaque secret)
     A-->>C: { accessToken (JWT, 15m), refreshToken, user }
 ```
 
+- Users sign in with their **mobile number**. The API normalises it to E.164
+  (`src/utils/phone.ts`: `98765 43210`, `+91-98765-43210` and `098765 43210` all
+  become `+919876543210`); `users.phone` is stored that way and is unique among
+  non-deleted users across **all** car washes, so a number identifies exactly one
+  account (and therefore one car wash). `username` is still accepted in place of
+  `phone` for older accounts without a number on file. Send exactly one of the two.
+  The same applies to `/auth/forgot-password` and `/auth/reset-password`.
 - Passwords are hashed with **argon2id** (`src/utils/password.ts`). Plaintext
   passwords are never logged or persisted.
 - The **access token** is a signed JWT (`JWT_ACCESS_SECRET`, `ACCESS_TOKEN_EXPIRES_IN`,
@@ -63,14 +70,14 @@ sequenceDiagram
     participant Mail as Mail provider
     participant DB as PostgreSQL
 
-    C->>A: POST /auth/forgot-password {username}
+    C->>A: POST /auth/forgot-password {phone}
     A->>DB: find user (does NOT reveal whether found)
     A->>DB: invalidate any existing active reset requests for user
     A->>DB: insert password_reset_tokens row (hash of userId + 6-digit code)
     A->>Mail: send the code
     A-->>C: 200 generic message (always, regardless of outcome)
 
-    C->>A: POST /auth/reset-password {username, code, newPassword}
+    C->>A: POST /auth/reset-password {phone, code, newPassword}
     A->>DB: newest unused, unexpired request for that user
     A->>A: compare code (or DEV_RESET_CODE); wrong -> attempts+1, burned at 5
     A->>DB: transaction: update password hash (+ clear must_change_password), mark used
@@ -81,7 +88,7 @@ sequenceDiagram
 Design decisions:
 
 - **No user enumeration**: `/auth/forgot-password` returns the same `200`
-  response and message whether the username exists, is inactive, or doesn't
+  response and message whether the account exists, is inactive, or doesn't
   exist. `reset-password` gives the same "Invalid or expired code" error for an
   unknown user, no pending request, a wrong code or an expired code.
 - **Short codes, bounded guessing**: codes are 6 random digits (`crypto.randomInt`),
@@ -104,7 +111,7 @@ Design decisions:
   with no email on file. `MAIL_PROVIDER=smtp` is a stub production integration
   point - wire in `nodemailer` (or your provider's SDK) there.
 - **Rate limiting**: `forgotPasswordRateLimiter` limits requests per
-  `ip + username` combination (`FORGOT_PASSWORD_RATE_LIMIT_MAX`, default 5/hour).
+  `ip + phone` (or `ip + username`) combination (`FORGOT_PASSWORD_RATE_LIMIT_MAX`, default 5/hour).
 
 ## Admin-set passwords must be changed
 

@@ -10,11 +10,11 @@ import { recordAuditLog, AUDIT_ACTIONS } from './audit-log.service';
 import { AuthenticatedUser } from '../types/express';
 import { Request } from 'express';
 
-type OrderStatus = 'CREATED' | 'CHECKED_IN' | 'WASHING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+type OrderStatus = 'CREATED' | 'WASHING' | 'READY' | 'COMPLETED' | 'CANCELLED';
 
+// CREATED is shown to staff as "Waiting".
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  CREATED: ['CHECKED_IN', 'CANCELLED'],
-  CHECKED_IN: ['WASHING', 'CANCELLED'],
+  CREATED: ['WASHING', 'CANCELLED'],
   WASHING: ['READY', 'CANCELLED'],
   READY: ['COMPLETED', 'CANCELLED'],
   COMPLETED: [],
@@ -23,7 +23,6 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 
 // Order status -> corresponding booking status kept in sync, in the same transaction.
 const BOOKING_STATUS_FOR_ORDER_STATUS: Partial<Record<OrderStatus, string>> = {
-  CHECKED_IN: 'IN_PROGRESS',
   WASHING: 'IN_PROGRESS',
   READY: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
@@ -104,7 +103,6 @@ export async function updateOrderStatus(
   }
 
   const timestampField: Partial<Record<OrderStatus, string>> = {
-    CHECKED_IN: 'checkedInAt',
     WASHING: 'washStartedAt',
     READY: 'readyAt',
     COMPLETED: 'completedAt',

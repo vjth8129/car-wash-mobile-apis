@@ -63,7 +63,7 @@ export const forgotPasswordRateLimiter = rateLimit({
   limit: env.FORGOT_PASSWORD_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `${req.ip}:${String(req.body?.username ?? '')}`,
+  keyGenerator: (req) => `${req.ip}:${String(req.body?.phone ?? req.body?.username ?? '')}`,
   message: {
     success: false,
     error: {

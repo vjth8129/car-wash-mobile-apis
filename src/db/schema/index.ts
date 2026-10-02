@@ -11,4 +11,5 @@ export * from './bookings';
 export * from './orders';
 export * from './tokens';
 export * from './audit-logs';
+export * from './payment-qr';
 export * from './relations';

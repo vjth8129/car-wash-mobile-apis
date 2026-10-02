@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/db';
-import { loginAs, bearer } from '../helpers/auth';
+import { loginAs, bearer, uniquePhone } from '../helpers/auth';
 
 const app = createApp();
 
@@ -19,7 +19,7 @@ async function createUserAsOwner(password: string) {
   const res = await request(app)
     .post('/api/v1/users')
     .set(...bearer(owner.accessToken))
-    .send({ username, password, name: 'New Starter', roleId: staffRole.id });
+    .send({ username, phone: uniquePhone(), password, name: 'New Starter', roleId: staffRole.id });
   expect(res.status).toBe(201);
   return { username, id: res.body.data.id, ownerToken: owner.accessToken };
 }

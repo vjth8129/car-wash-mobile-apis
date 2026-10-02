@@ -257,6 +257,7 @@ async function seedCarWash() {
 
 async function seedUser(params: {
   username: string;
+  phone: string;
   password: string;
   name: string;
   email: string;
@@ -270,6 +271,7 @@ async function seedUser(params: {
       .insert(usersTable)
       .values({
         username: params.username,
+        phone: params.phone,
         passwordHash,
         name: params.name,
         email: params.email,
@@ -279,6 +281,14 @@ async function seedUser(params: {
       })
       .returning();
     user = inserted;
+  } else if (!user.phone) {
+    // Databases seeded before phone login: give the demo users their sign-in number.
+    const [updated] = await db
+      .update(usersTable)
+      .set({ phone: params.phone })
+      .where(eq(usersTable.id, user.id))
+      .returning();
+    user = updated;
   }
   return user;
 }
@@ -451,19 +461,21 @@ export async function seedDatabase(): Promise<void> {
 
   await seedUser({
     username: 'superadmin',
+    phone: '+919000000100',
     password: 'SuperAdmin@123',
     name: 'Platform Super Admin',
     email: 'superadmin@carwash.local',
     roleId: roleIdByName.get('SUPER_ADMIN')!,
     carWashId: null,
   });
-  logger.info('Seeded platform super admin (username: superadmin / password: SuperAdmin@123)');
+  logger.info('Seeded platform super admin (9000000100 / SuperAdmin@123)');
 
   const carWash = await seedCarWash();
   logger.info(`Seeded car wash: ${carWash.name} (${carWash.code})`);
 
   await seedUser({
     username: 'owner',
+    phone: '+919000000101',
     password: 'Owner@123',
     name: 'Sparkle Owner',
     email: 'owner@sparklecarwash.example',
@@ -472,6 +484,7 @@ export async function seedDatabase(): Promise<void> {
   });
   const manager = await seedUser({
     username: 'manager',
+    phone: '+919000000102',
     password: 'Manager@123',
     name: 'Sparkle Manager',
     email: 'manager@sparklecarwash.example',
@@ -480,6 +493,7 @@ export async function seedDatabase(): Promise<void> {
   });
   await seedUser({
     username: 'staff',
+    phone: '+919000000103',
     password: 'Staff@123',
     name: 'Sparkle Staff',
     email: 'staff@sparklecarwash.example',
@@ -499,10 +513,11 @@ export async function seedDatabase(): Promise<void> {
 
   logger.info('Database seed completed successfully.');
   logger.info('--- Development credentials (do NOT use in production) ---');
-  logger.info('superadmin / SuperAdmin@123');
-  logger.info('owner / Owner@123');
-  logger.info('manager / Manager@123');
-  logger.info('staff / Staff@123');
+  logger.info('Sign in with mobile number (or username) + password:');
+  logger.info('9000000100 (superadmin) / SuperAdmin@123');
+  logger.info('9000000101 (owner) / Owner@123');
+  logger.info('9000000102 (manager) / Manager@123');
+  logger.info('9000000103 (staff) / Staff@123');
 }
 
 // Only auto-run (and close the pool) when executed directly via `npm run db:seed`.

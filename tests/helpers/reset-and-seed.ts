@@ -52,6 +52,7 @@ async function seedSecondTenant() {
     .insert(users)
     .values({
       username: 'owner_b',
+      phone: '+919000000201',
       passwordHash,
       name: 'Shine Owner',
       email: 'owner@shinecarwash.example',

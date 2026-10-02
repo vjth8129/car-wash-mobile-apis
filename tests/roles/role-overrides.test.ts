@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/db';
-import { loginAs, bearer } from '../helpers/auth';
+import { loginAs, bearer, uniquePhone } from '../helpers/auth';
 
 const app = createApp();
 
@@ -64,7 +64,7 @@ describe('Customising built-in roles per car wash', () => {
     const patchOrder = await request(app)
       .patch('/api/v1/orders/00000000-0000-0000-0000-000000000000')
       .set(...bearer(staffLogin.accessToken))
-      .send({ status: 'CHECKED_IN' });
+      .send({ status: 'WASHING' });
     expect(patchOrder.status).toBe(403);
 
     // Another car wash still sees the default STAFF permissions.
@@ -146,6 +146,7 @@ describe('Customising built-in roles per car wash', () => {
       .set(...bearer(token))
       .send({
         username: `assign-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'Assign@1234',
         name: 'Assign Test',
         roleId: staff.id,

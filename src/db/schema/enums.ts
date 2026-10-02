@@ -28,9 +28,9 @@ export const bookingStatusEnum = pgEnum('booking_status', [
 /** Whether a vehicle is washed as a private car or a taxi - decides which service rate applies. */
 export const vehicleCategoryEnum = pgEnum('vehicle_category', ['PRIVATE', 'TAXI']);
 
+/** Job workflow: CREATED (shown as "Waiting") -> WASHING -> READY -> COMPLETED, or CANCELLED. */
 export const orderStatusEnum = pgEnum('order_status', [
   'CREATED',
-  'CHECKED_IN',
   'WASHING',
   'READY',
   'COMPLETED',

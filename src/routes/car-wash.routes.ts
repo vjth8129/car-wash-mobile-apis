@@ -8,7 +8,7 @@ import {
 } from '../middlewares/authorize.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import {
-  createCarWashSchema,
+  onboardCarWashSchema,
   updateCarWashSchema,
   carWashIdParamSchema,
   listCarWashesQuerySchema,
@@ -42,7 +42,8 @@ router.use(authenticate);
  *       200: { description: List of car washes }
  *   post:
  *     tags: [Car Washes]
- *     summary: Create a new car wash (tenant)
+ *     summary: Onboard a new car wash (tenant), optionally with its first owner
+ *     description: With `owner`, the car wash and an OWNER account are created together. The owner signs in with their mobile number and must change the given password on first sign-in.
  *     requestBody:
  *       required: true
  *       content:
@@ -53,6 +54,15 @@ router.use(authenticate);
  *             properties:
  *               name: { type: string }
  *               code: { type: string, example: SPARKLE001 }
+ *               owner:
+ *                 type: object
+ *                 required: [name, phone, username, password]
+ *                 properties:
+ *                   name: { type: string }
+ *                   phone: { type: string, example: "+919000000201" }
+ *                   username: { type: string }
+ *                   password: { type: string, format: password }
+ *                   email: { type: string, format: email }
  *     responses:
  *       201: { description: Car wash created }
  */
@@ -70,8 +80,25 @@ router.post(
   '/',
   requireSuperAdmin(),
   requirePermission(PERMISSIONS.CAR_WASH_CREATE),
-  validate({ body: createCarWashSchema }),
+  validate({ body: onboardCarWashSchema }),
   carWashController.createCarWash,
+);
+
+/**
+ * @openapi
+ * /car-washes/stats:
+ *   get:
+ *     tags: [Car Washes]
+ *     summary: Platform-wide counts for the admin portal dashboard
+ *     description: Car washes by status, tenant users (total / active) and orders (today / last 30 days). Platform admins only.
+ *     responses:
+ *       200: { description: Platform stats }
+ */
+router.get(
+  '/stats',
+  requireSuperAdmin(),
+  requirePermission(PERMISSIONS.CAR_WASH_VIEW),
+  carWashController.getPlatformStats,
 );
 
 /**

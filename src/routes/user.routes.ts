@@ -48,13 +48,13 @@ router.use(authenticate);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [username, password, name, roleId]
+ *             required: [username, password, name, phone, roleId]
  *             properties:
  *               username: { type: string }
  *               password: { type: string, format: password }
  *               name: { type: string }
  *               email: { type: string }
- *               phone: { type: string }
+ *               phone: { type: string, description: "Mobile number the user signs in with; unique across all car washes" }
  *               roleId: { type: string, format: uuid }
  *     responses:
  *       201: { description: User created }

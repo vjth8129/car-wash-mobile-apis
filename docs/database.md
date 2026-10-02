@@ -40,13 +40,13 @@ erDiagram
 | `permissions` | Flat catalog, unique `key`. |
 | `roles` | `car_wash_id` nullable = global system role template; `is_system` blocks edit/delete via API. Partial unique indexes enforce unique names within "global" and within each tenant separately. |
 | `role_permissions` | Join table, unique `(role_id, permission_id)`. |
-| `users` | `car_wash_id` nullable only for `SUPER_ADMIN`. Unique `username` (global). Soft-delete via `deleted_at`. |
+| `users` | `car_wash_id` nullable only for `SUPER_ADMIN`. Unique `username` (global). `phone` is the E.164 sign-in number, unique among non-deleted users (partial index `users_phone_idx`). Soft-delete via `deleted_at`. |
 | `menus` / `menu_permissions` | Nested menu tree (`parent_id` self-reference) with permission gating (primary `permission_id` plus OR'd `menu_permissions`). |
 | `services` | Tenant-owned catalog. Unique `(car_wash_id, name)`. Soft-delete. `price` = private rate, nullable `taxi_price` = taxi rate. |
 | `customers` | Tenant-owned. Indexed on `car_wash_id`, `phone`. Soft-delete. |
 | `vehicles` | Belongs to a customer *and* denormalizes `car_wash_id` for fast tenant-scoped queries without a join. Unique `(car_wash_id, registration_number)`. Soft-delete. |
 | `bookings` | `status` state machine (see [api.md](./api.md)). `vehicle_category` (`PRIVATE`/`TAXI`) and a `price` snapshot of the rate charged. Indexed on `car_wash_id`, `booking_date`, `customer_id`, `vehicle_id`, `status`. |
-| `orders` | One-to-one with a `booking_id`. `status` workflow CREATED→CHECKED_IN→WASHING→READY→COMPLETED (or CANCELLED at any non-terminal step). Timestamps per stage transition. |
+| `orders` | One-to-one with a `booking_id`. `status` workflow CREATED ("Waiting")→WASHING→READY→COMPLETED (or CANCELLED at any non-terminal step). Timestamps per stage transition. |
 | `refresh_tokens` | `token_hash` only (sha256 of the opaque secret), `revoked_at`, `replaced_by_token_id` for rotation auditing. |
 | `password_reset_tokens` | `token_hash` only, `used_at`, `expires_at`. |
 | `audit_logs` | `user_id`/`car_wash_id` nullable (survives user/tenant deletion via `ON DELETE SET NULL`), free-form `metadata` JSONB. |

@@ -7,6 +7,7 @@ import {
   index,
   boolean,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { carWashes } from './car-washes';
 import { roles } from './roles';
 import { userStatusEnum } from './enums';
@@ -24,6 +25,7 @@ export const users = pgTable(
     passwordHash: varchar('password_hash', { length: 255 }).notNull(),
     name: varchar('name', { length: 150 }).notNull(),
     email: varchar('email', { length: 150 }),
+    /** E.164 (see utils/phone). The sign-in identifier; unique among non-deleted users. */
     phone: varchar('phone', { length: 30 }),
     status: userStatusEnum('status').notNull().default('ACTIVE'),
     /** Set when an admin sets the password (create / reset); cleared once the user changes it. */
@@ -35,6 +37,9 @@ export const users = pgTable(
   },
   (table) => [
     uniqueIndex('users_username_idx').on(table.username),
+    uniqueIndex('users_phone_idx')
+      .on(table.phone)
+      .where(sql`${table.deletedAt} IS NULL`),
     index('users_car_wash_id_idx').on(table.carWashId),
   ],
 );

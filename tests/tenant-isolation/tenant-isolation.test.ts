@@ -3,7 +3,7 @@ import { createApp } from '../../src/app';
 import { db, pool } from '../../src/db';
 import { carWashes, services, customers } from '../../src/db/schema';
 import { eq } from 'drizzle-orm';
-import { loginAs, bearer } from '../helpers/auth';
+import { loginAs, bearer, uniquePhone } from '../helpers/auth';
 
 const app = createApp();
 
@@ -104,6 +104,7 @@ describe('Tenant isolation: Owner of Car Wash A vs Car Wash B', () => {
       .set(...bearer(accessToken))
       .send({
         username: `cross-tenant-attempt-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'SomeValidPass@123',
         name: 'Cross Tenant Attempt',
         roleId: staffRole!.id,

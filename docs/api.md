@@ -82,21 +82,24 @@ the service's `durationMinutes`).
 ```mermaid
 stateDiagram-v2
     [*] --> CREATED: POST /orders {bookingId}
-    CREATED --> CHECKED_IN
-    CHECKED_IN --> WASHING
+    CREATED --> WASHING
     WASHING --> READY
     READY --> COMPLETED
     CREATED --> CANCELLED
-    CHECKED_IN --> CANCELLED
     WASHING --> CANCELLED
     READY --> CANCELLED
     COMPLETED --> [*]
     CANCELLED --> [*]
 ```
 
+Staff see four states: **Waiting** (`CREATED`), **Washing**, **Ready** and
+**Completed**. `CHECKED_IN` was removed (migration 0005 moved such orders back to
+`CREATED`); `PATCH {status: "CHECKED_IN"}` from older app builds is treated as
+`WASHING`.
+
 Creating an order atomically confirms its booking (if still `PENDING`) in the
 same DB transaction. Each order status transition keeps the linked booking's
-status in sync in the same transaction (`CHECKED_IN`/`WASHING`/`READY` →
+status in sync in the same transaction (`WASHING`/`READY` →
 booking `IN_PROGRESS`; `COMPLETED` → booking `COMPLETED`, and the booking's
 `price` is copied onto `orders.total_amount`; `CANCELLED` → booking `CANCELLED`).
 
@@ -128,7 +131,7 @@ and `customerId`.
 ## Example: mobile app session bootstrap
 
 ```bash
-curl -X POST /api/v1/auth/login -d '{"username":"owner","password":"Owner@123"}'
+curl -X POST /api/v1/auth/login -d '{"phone":"9000000101","password":"Owner@123"}'
 curl /api/v1/auth/me           -H "Authorization: Bearer $ACCESS_TOKEN"
 curl /api/v1/app/menu          -H "Authorization: Bearer $ACCESS_TOKEN"
 curl /api/v1/app/config        -H "Authorization: Bearer $ACCESS_TOKEN"

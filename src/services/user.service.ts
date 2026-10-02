@@ -10,6 +10,7 @@ import { AuthenticatedUser } from '../types/express';
 import { SYSTEM_ROLES } from '../constants/roles';
 import { recordAuditLog, AUDIT_ACTIONS } from './audit-log.service';
 import { Request } from 'express';
+import { findCarWashById } from '../repositories/car-wash.repository';
 
 function isSuperAdmin(user: AuthenticatedUser): boolean {
   return user.roleName === SYSTEM_ROLES.SUPER_ADMIN;
@@ -20,12 +21,27 @@ function serializeUser(user: any) {
   return rest;
 }
 
-async function assertCanAssignRole(actingUser: AuthenticatedUser, roleId: string) {
+async function assertCanAssignRole(
+  actingUser: AuthenticatedUser,
+  roleId: string,
+  targetCarWashId: string | null = actingUser.carWashId,
+) {
   const role = await roleRepo.findRoleById(roleId);
   if (!role) throw new NotFoundError('Role not found');
 
   if (role.name === SYSTEM_ROLES.SUPER_ADMIN && !isSuperAdmin(actingUser)) {
     throw new ForbiddenError('Only a platform administrator can assign the SUPER_ADMIN role');
+  }
+  // A platform admin works across car washes: the role must fit the user's car wash.
+  if (isSuperAdmin(actingUser)) {
+    if ((role.name === SYSTEM_ROLES.SUPER_ADMIN) !== (targetCarWashId === null)) {
+      throw new ForbiddenError(
+        'SUPER_ADMIN is only for platform users, and platform users must be SUPER_ADMIN',
+      );
+    }
+    if (role.carWashId !== null && role.carWashId !== targetCarWashId) {
+      throw new ForbiddenError('That role belongs to a different car wash');
+    }
   }
 
   if (!isSuperAdmin(actingUser)) {
@@ -46,6 +62,14 @@ async function assertCanAssignRole(actingUser: AuthenticatedUser, roleId: string
   return role;
 }
 
+/** Phone numbers are the sign-in identifier, so they must be unique across every car wash. */
+export async function assertPhoneAvailable(phone: string, exceptUserId?: string) {
+  const existing = await userRepo.findUserByPhone(phone);
+  if (existing && existing.id !== exceptUserId) {
+    throw new ConflictError('This mobile number is already registered to another user');
+  }
+}
+
 function assertSameTenant(actingUser: AuthenticatedUser, targetCarWashId: string | null) {
   if (isSuperAdmin(actingUser)) return;
   if (targetCarWashId !== actingUser.carWashId) {
@@ -56,10 +80,12 @@ function assertSameTenant(actingUser: AuthenticatedUser, targetCarWashId: string
 export async function listUsers(
   actingUser: AuthenticatedUser,
   pagination: PaginationQuery,
-  filters: { search?: string; status?: string },
+  filters: { search?: string; status?: string; carWashId?: string },
 ) {
-  const carWashId = isSuperAdmin(actingUser) ? null : actingUser.carWashId;
-  const { rows, total } = await userRepo.listUsers({ carWashId, ...pagination, ...filters });
+  const { carWashId: requestedCarWashId, ...rest } = filters;
+  // Tenant users always see their own car wash; platform admins may pick one (or see all).
+  const carWashId = isSuperAdmin(actingUser) ? (requestedCarWashId ?? null) : actingUser.carWashId;
+  const { rows, total } = await userRepo.listUsers({ carWashId, ...pagination, ...rest });
   return {
     rows: rows.map(serializeUser),
     pagination: buildPagination(pagination.page, pagination.limit, total),
@@ -80,26 +106,32 @@ export async function createUser(
     password: string;
     name: string;
     email?: string;
-    phone?: string;
+    phone: string;
     roleId: string;
+    carWashId?: string;
   },
   req?: Request,
 ) {
   if (!isSuperAdmin(actingUser) && !actingUser.carWashId) {
     throw new ForbiddenError('User is not associated with a car wash');
   }
+  // carWashId is derived from the acting user's own session - never trusted from client
+  // input - so a created user is automatically scoped to the creator's tenant. Only a
+  // platform admin (who has no tenant) may name the car wash to add the user to.
+  const carWashId = isSuperAdmin(actingUser) ? (input.carWashId ?? null) : actingUser.carWashId;
+  if (carWashId && isSuperAdmin(actingUser) && !(await findCarWashById(carWashId))) {
+    throw new NotFoundError('Car wash not found');
+  }
 
-  await assertCanAssignRole(actingUser, input.roleId);
+  await assertCanAssignRole(actingUser, input.roleId, carWashId);
 
   const existing = await userRepo.findUserByUsername(input.username);
   if (existing) {
     throw new ConflictError(`Username "${input.username}" is already taken`);
   }
+  await assertPhoneAvailable(input.phone);
 
   const passwordHash = await hashPassword(input.password);
-  // carWashId is always derived from the acting user's own session - never trusted
-  // from client input - so a created user is automatically scoped to the creator's tenant.
-  const carWashId = actingUser.carWashId;
 
   const user = await userRepo.createUser({
     username: input.username,
@@ -127,7 +159,7 @@ export async function createUser(
 export async function updateUser(
   actingUser: AuthenticatedUser,
   id: string,
-  input: { name?: string; email?: string; phone?: string; roleId?: string },
+  input: { name?: string; email?: string | null; phone?: string; roleId?: string },
   req?: Request,
 ) {
   const user = await userRepo.findUserById(id);
@@ -135,7 +167,10 @@ export async function updateUser(
   assertSameTenant(actingUser, user.carWashId);
 
   if (input.roleId) {
-    await assertCanAssignRole(actingUser, input.roleId);
+    await assertCanAssignRole(actingUser, input.roleId, user.carWashId);
+  }
+  if (input.phone) {
+    await assertPhoneAvailable(input.phone, id);
   }
 
   await userRepo.updateUser(id, input);

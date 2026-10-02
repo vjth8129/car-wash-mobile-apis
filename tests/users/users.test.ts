@@ -3,7 +3,7 @@ import { createApp } from '../../src/app';
 import { db, pool } from '../../src/db';
 import { roles } from '../../src/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
-import { loginAs, bearer } from '../helpers/auth';
+import { loginAs, bearer, uniquePhone } from '../helpers/auth';
 
 const app = createApp();
 
@@ -29,6 +29,7 @@ describe('Users CRUD and role assignment', () => {
       .set(...bearer(accessToken))
       .send({
         username: `new-staff-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'ValidPass@123',
         name: 'New Staff Member',
         roleId: staffRoleId,
@@ -56,6 +57,7 @@ describe('Users CRUD and role assignment', () => {
       .set(...bearer(accessToken))
       .send({
         username: `update-target-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'ValidPass@123',
         name: 'Original Name',
         roleId: staffRoleId,
@@ -72,6 +74,28 @@ describe('Users CRUD and role assignment', () => {
     expect(updateRes.body.data.roleId).toBe(managerRoleId);
   });
 
+  it('accepts the app’s edit payload: a cleared email (null) and a new mobile number', async () => {
+    const { accessToken } = await loginAs(app, 'owner', 'Owner@123');
+    const createRes = await request(app)
+      .post('/api/v1/users')
+      .set(...bearer(accessToken))
+      .send({
+        username: `edit-payload-${Date.now()}`,
+        phone: uniquePhone(),
+        email: 'before@example.com',
+        password: 'ValidPass@123',
+        name: 'Edit Payload',
+        roleId: await systemRoleId('STAFF'),
+      });
+    const newPhone = uniquePhone();
+    const res = await request(app)
+      .patch(`/api/v1/users/${createRes.body.data.id}`)
+      .set(...bearer(accessToken))
+      .send({ name: 'Edit Payload', email: null, phone: newPhone });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ email: null, phone: newPhone });
+  });
+
   it('rejects assigning the SUPER_ADMIN role from a non-platform-admin caller', async () => {
     const { accessToken } = await loginAs(app, 'owner', 'Owner@123');
     const superAdminRoleId = await systemRoleId('SUPER_ADMIN');
@@ -81,6 +105,7 @@ describe('Users CRUD and role assignment', () => {
       .set(...bearer(accessToken))
       .send({
         username: `attempted-superadmin-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'ValidPass@123',
         name: 'Attempted Super Admin',
         roleId: superAdminRoleId,
@@ -98,6 +123,7 @@ describe('Users CRUD and role assignment', () => {
       .set(...bearer(accessToken))
       .send({
         username: `status-target-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'ValidPass@123',
         name: 'Status Target',
         roleId: staffRoleId,
@@ -121,6 +147,7 @@ describe('Users CRUD and role assignment', () => {
       .set(...bearer(accessToken))
       .send({
         username: `delete-target-${Date.now()}`,
+        phone: uniquePhone(),
         password: 'ValidPass@123',
         name: 'Delete Target',
         roleId: staffRoleId,
