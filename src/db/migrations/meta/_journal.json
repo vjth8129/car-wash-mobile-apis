@@ -43,6 +43,13 @@
       "when": 1790917622174,
       "tag": "0005_simplify_order_statuses",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791630339297,
+      "tag": "0006_vehicle_categories_multi_service_payments",
+      "breakpoints": true
     }
   ]
 }

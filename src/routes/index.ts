@@ -11,6 +11,7 @@ import vehicleRoutes from './vehicle.routes';
 import bookingRoutes from './booking.routes';
 import orderRoutes from './order.routes';
 import reportRoutes from './report.routes';
+import vehicleCategoryRoutes from './vehicle-category.routes';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/vehicles', vehicleRoutes);
 router.use('/bookings', bookingRoutes);
 router.use('/orders', orderRoutes);
 router.use('/reports', reportRoutes);
+router.use('/vehicle-categories', vehicleCategoryRoutes);
 
 export default router;

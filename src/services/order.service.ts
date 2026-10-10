@@ -32,7 +32,7 @@ const BOOKING_STATUS_FOR_ORDER_STATUS: Partial<Record<OrderStatus, string>> = {
 export async function listOrders(
   carWashId: string,
   pagination: PaginationQuery,
-  filters: { status?: string },
+  filters: { status?: string; paymentStatus?: 'PAID' | 'UNPAID' },
 ) {
   const { rows, total } = await orderRepo.listOrders({ carWashId, ...pagination, ...filters });
   return { rows, pagination: buildPagination(pagination.page, pagination.limit, total) };
@@ -88,6 +88,37 @@ export async function createOrder(
   return getOrder(carWashId, order.id);
 }
 
+/** Staff note that the customer paid (by UPI / cash), or clear it with method null. */
+export async function recordPayment(
+  user: AuthenticatedUser,
+  carWashId: string,
+  id: string,
+  method: 'UPI' | 'CASH' | null,
+  req?: Request,
+) {
+  const existing = await orderRepo.findOrderById(id, carWashId);
+  if (!existing) throw new NotFoundError('Order not found');
+  if (existing.status === 'CANCELLED') {
+    throw new ValidationError('Cannot record a payment for a cancelled job');
+  }
+  await db
+    .update(orders)
+    .set(
+      method
+        ? { paidAt: new Date(), paymentMethod: method, paidBy: user.id, updatedAt: new Date() }
+        : { paidAt: null, paymentMethod: null, paidBy: null, updatedAt: new Date() },
+    )
+    .where(eq(orders.id, id));
+  await recordAuditLog({
+    req,
+    action: AUDIT_ACTIONS.ORDER_PAYMENT_RECORDED,
+    entityType: 'ORDER',
+    entityId: id,
+    metadata: { method },
+  });
+  return getOrder(carWashId, id);
+}
+
 export async function updateOrderStatus(
   carWashId: string,
   id: string,
@@ -114,7 +145,7 @@ export async function updateOrderStatus(
     const field = timestampField[nextStatus];
     if (field) updates[field] = new Date();
     if (nextStatus === 'COMPLETED') {
-      // The booking's price snapshot reflects the private/taxi rate at booking time;
+      // The booking's price is the total of its services at the vehicle category's rates;
       // fall back to the service price for bookings created before prices were snapshotted.
       const amount = existing.booking?.price ?? existing.booking?.service?.price;
       if (amount) updates.totalAmount = amount;

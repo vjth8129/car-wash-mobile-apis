@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, numeric, timestamp, index, varchar } from 'drizzle-orm/pg-core';
 import { carWashes } from './car-washes';
 import { bookings } from './bookings';
 import { users } from './users';
@@ -22,6 +22,11 @@ export const orders = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     totalAmount: numeric('total_amount', { precision: 10, scale: 2 }),
+    /** Staff noted the customer paid (the app doesn't take payments itself). */
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    /** UPI or CASH. */
+    paymentMethod: varchar('payment_method', { length: 20 }),
+    paidBy: uuid('paid_by').references(() => users.id, { onDelete: 'set null' }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),

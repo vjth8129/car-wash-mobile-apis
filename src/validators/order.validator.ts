@@ -12,10 +12,17 @@ export const updateOrderStatusSchema = z.object({
     .transform((s) => (s === 'CHECKED_IN' ? 'WASHING' : s)),
 });
 
+/** Record how the customer paid, or null to undo a mistaken entry. */
+export const recordPaymentSchema = z.object({
+  method: z.enum(['UPI', 'CASH']).nullable(),
+});
+
 export const orderIdParamSchema = z.object({ id: z.string().uuid() });
 
 export const listOrdersQuerySchema = z.object({
   page: z.string().optional(),
   limit: z.string().optional(),
   status: z.enum(['CREATED', 'WASHING', 'READY', 'COMPLETED', 'CANCELLED']).optional(),
+  /** UNPAID = no payment noted yet (e.g. staff forgot to mark it), PAID = noted. */
+  paymentStatus: z.enum(['PAID', 'UNPAID']).optional(),
 });

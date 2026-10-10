@@ -114,7 +114,7 @@ describe('Booking price snapshot', () => {
     const token = await ownerToken();
     const service = await createService(token, { price: 400, taxiPrice: 350 });
 
-    const privateBooking = await book(token, service.id);
+    const privateBooking = await book(token, service.id, 'PRIVATE');
     expect(privateBooking.vehicleCategory).toBe('PRIVATE');
     expect(privateBooking.price).toBe('400.00');
 
@@ -151,7 +151,7 @@ describe('Booking price snapshot', () => {
   it('re-prices when the booking category changes', async () => {
     const token = await ownerToken();
     const service = await createService(token, { price: 600, taxiPrice: 500 });
-    const booking = await book(token, service.id);
+    const booking = await book(token, service.id, 'PRIVATE');
     expect(booking.price).toBe('600.00');
 
     const res = await request(app)

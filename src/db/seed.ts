@@ -12,6 +12,9 @@ import {
   customers as customersTable,
   vehicles as vehiclesTable,
   bookings as bookingsTable,
+  bookingServices,
+  vehicleCategories,
+  DEFAULT_VEHICLE_CATEGORY_CODE,
   orders as ordersTable,
 } from './schema';
 import { PERMISSION_DEFINITIONS } from '../constants/permissions';
@@ -428,10 +431,23 @@ async function seedBookingsAndOrders(
         endTime: '10:20',
         status: 'CONFIRMED',
         notes: 'Seed data sample booking',
+        price: '199.00',
+        categoryId: (
+          await db.query.vehicleCategories.findFirst({
+            where: eq(vehicleCategories.code, DEFAULT_VEHICLE_CATEGORY_CODE),
+          })
+        )?.id,
         createdBy,
       })
       .returning();
     booking = inserted;
+    await db.insert(bookingServices).values({
+      bookingId: booking.id,
+      serviceId: serviceIdByName['Basic Wash'],
+      name: 'Basic Wash',
+      price: '199.00',
+      durationMinutes: 20,
+    });
   }
 
   const existingOrder = await db.query.orders.findFirst({

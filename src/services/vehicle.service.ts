@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 import { buildPagination } from '../utils/api-response';
 import { PaginationQuery } from '../utils/pagination';
 import { recordAuditLog, AUDIT_ACTIONS } from './audit-log.service';
+import { resolveCategory } from './vehicle-category.service';
 import { Request } from 'express';
 
 export async function listVehicles(
@@ -39,7 +40,8 @@ export async function createVehicle(carWashId: string, input: any, req?: Request
     );
   }
 
-  const vehicle = await vehicleRepo.createVehicle({ ...input, carWashId });
+  const category = await resolveCategory({ categoryId: input.categoryId });
+  const vehicle = await vehicleRepo.createVehicle({ ...input, categoryId: category.id, carWashId });
   await recordAuditLog({
     req,
     action: AUDIT_ACTIONS.VEHICLE_CREATED,
@@ -54,6 +56,7 @@ export async function updateVehicle(carWashId: string, id: string, input: any, r
   const existing = await vehicleRepo.findVehicleById(id, carWashId);
   if (!existing) throw new NotFoundError('Vehicle not found');
 
+  if (input.categoryId) await resolveCategory({ categoryId: input.categoryId });
   const updated = await vehicleRepo.updateVehicle(id, carWashId, input);
   await recordAuditLog({
     req,

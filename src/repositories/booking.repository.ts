@@ -2,6 +2,15 @@ import { and, eq, gte, lte, lt, gt, ne, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { bookings, Booking, NewBooking } from '../db/schema';
 
+/** Services in a booking and its vehicle category, included wherever bookings are returned. */
+export const bookingDetailRelations = {
+  items: {
+    columns: { id: true, serviceId: true, name: true, price: true, durationMinutes: true },
+    orderBy: (i: any, { asc }: any) => [asc(i.sortOrder)],
+  },
+  category: { columns: { id: true, code: true, name: true } },
+} as const;
+
 export async function findBookingById(id: string, carWashId: string): Promise<Booking | undefined> {
   return db.query.bookings.findFirst({
     where: and(eq(bookings.id, id), eq(bookings.carWashId, carWashId)),
@@ -11,6 +20,7 @@ export async function findBookingById(id: string, carWashId: string): Promise<Bo
       service: {
         columns: { id: true, name: true, price: true, taxiPrice: true, durationMinutes: true },
       },
+      ...bookingDetailRelations,
     },
   });
 }
@@ -33,7 +43,10 @@ export async function updateBooking(
   return row;
 }
 
-/** Finds active (non-cancelled/no-show) bookings for the same vehicle whose time range overlaps. */
+/**
+ * Finds open bookings for the same vehicle whose time range overlaps. Completed washes don't
+ * count: the car is free once it's handed over, even if that was before the planned end time.
+ */
 export async function findOverlappingBookingsForVehicle(
   carWashId: string,
   vehicleId: string,
@@ -48,7 +61,7 @@ export async function findOverlappingBookingsForVehicle(
     eq(bookings.bookingDate, bookingDate),
     lt(bookings.startTime, endTime),
     gt(bookings.endTime, startTime),
-    sql`${bookings.status} not in ('CANCELLED', 'NO_SHOW')`,
+    sql`${bookings.status} not in ('CANCELLED', 'NO_SHOW', 'COMPLETED')`,
   ];
   if (excludeBookingId) {
     conditions.push(ne(bookings.id, excludeBookingId));
@@ -98,6 +111,7 @@ export async function listBookings(options: ListBookingsOptions) {
         service: {
           columns: { id: true, name: true, price: true, taxiPrice: true, durationMinutes: true },
         },
+        ...bookingDetailRelations,
       },
       limit: options.limit,
       offset: options.offset,

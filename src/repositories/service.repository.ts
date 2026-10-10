@@ -1,10 +1,61 @@
-import { and, eq, ilike, isNull, sql } from 'drizzle-orm';
+import { and, eq, ilike, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { services, Service, NewService } from '../db/schema';
+import { services, serviceRates, Service, NewService } from '../db/schema';
 
-export async function findServiceById(id: string, carWashId: string): Promise<Service | undefined> {
+/** Per-vehicle-category rates, returned with every service. */
+const withRates = { rates: { columns: { categoryId: true, price: true } } } as const;
+
+export type ServiceWithRates = Service & { rates: { categoryId: string; price: string }[] };
+
+export async function findServiceById(
+  id: string,
+  carWashId: string,
+): Promise<ServiceWithRates | undefined> {
   return db.query.services.findFirst({
     where: and(eq(services.id, id), eq(services.carWashId, carWashId), isNull(services.deletedAt)),
+    with: withRates,
+  });
+}
+
+export async function findServicesByIds(
+  ids: string[],
+  carWashId: string,
+): Promise<ServiceWithRates[]> {
+  if (ids.length === 0) return [];
+  return db.query.services.findMany({
+    where: and(
+      inArray(services.id, ids),
+      eq(services.carWashId, carWashId),
+      isNull(services.deletedAt),
+    ),
+    with: withRates,
+  });
+}
+
+/** Replaces the rates for the given categories: a null price removes that category's rate. */
+export async function setServiceRates(
+  serviceId: string,
+  rates: { categoryId: string; price: string | null }[],
+  options: { replaceAll?: boolean } = {},
+) {
+  await db.transaction(async (tx) => {
+    if (options.replaceAll) {
+      await tx.delete(serviceRates).where(eq(serviceRates.serviceId, serviceId));
+    } else if (rates.length > 0) {
+      await tx.delete(serviceRates).where(
+        and(
+          eq(serviceRates.serviceId, serviceId),
+          inArray(
+            serviceRates.categoryId,
+            rates.map((r) => r.categoryId),
+          ),
+        ),
+      );
+    }
+    const rows = rates
+      .filter((r): r is { categoryId: string; price: string } => r.price !== null)
+      .map((r) => ({ serviceId, categoryId: r.categoryId, price: r.price }));
+    if (rows.length > 0) await tx.insert(serviceRates).values(rows);
   });
 }
 
@@ -68,6 +119,7 @@ export async function listServices(options: ListServicesOptions) {
   const [rows, totalRow] = await Promise.all([
     db.query.services.findMany({
       where,
+      with: withRates,
       limit: options.limit,
       offset: options.offset,
       orderBy: (s, { asc }) => [asc(s.sortOrder), asc(s.name)],

@@ -8,6 +8,8 @@ import { services } from './services';
 import { customers } from './customers';
 import { vehicles } from './vehicles';
 import { bookings } from './bookings';
+import { bookingServices } from './booking-services';
+import { vehicleCategories, serviceRates } from './vehicle-categories';
 import { orders } from './orders';
 import { refreshTokens, passwordResetTokens } from './tokens';
 import { auditLogs } from './audit-logs';
@@ -65,6 +67,24 @@ export const menuPermissionsRelations = relations(menuPermissions, ({ one }) => 
 export const servicesRelations = relations(services, ({ one, many }) => ({
   carWash: one(carWashes, { fields: [services.carWashId], references: [carWashes.id] }),
   bookings: many(bookings),
+  rates: many(serviceRates),
+}));
+
+export const vehicleCategoriesRelations = relations(vehicleCategories, ({ many }) => ({
+  rates: many(serviceRates),
+}));
+
+export const serviceRatesRelations = relations(serviceRates, ({ one }) => ({
+  service: one(services, { fields: [serviceRates.serviceId], references: [services.id] }),
+  category: one(vehicleCategories, {
+    fields: [serviceRates.categoryId],
+    references: [vehicleCategories.id],
+  }),
+}));
+
+export const bookingServicesRelations = relations(bookingServices, ({ one }) => ({
+  booking: one(bookings, { fields: [bookingServices.bookingId], references: [bookings.id] }),
+  service: one(services, { fields: [bookingServices.serviceId], references: [services.id] }),
 }));
 
 export const customersRelations = relations(customers, ({ one, many }) => ({
@@ -76,6 +96,10 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
 export const vehiclesRelations = relations(vehicles, ({ one, many }) => ({
   carWash: one(carWashes, { fields: [vehicles.carWashId], references: [carWashes.id] }),
   customer: one(customers, { fields: [vehicles.customerId], references: [customers.id] }),
+  category: one(vehicleCategories, {
+    fields: [vehicles.categoryId],
+    references: [vehicleCategories.id],
+  }),
   bookings: many(bookings),
 }));
 
@@ -85,6 +109,11 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   vehicle: one(vehicles, { fields: [bookings.vehicleId], references: [vehicles.id] }),
   service: one(services, { fields: [bookings.serviceId], references: [services.id] }),
   createdByUser: one(users, { fields: [bookings.createdBy], references: [users.id] }),
+  category: one(vehicleCategories, {
+    fields: [bookings.categoryId],
+    references: [vehicleCategories.id],
+  }),
+  items: many(bookingServices),
   orders: many(orders),
 }));
 

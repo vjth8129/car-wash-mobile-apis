@@ -10,6 +10,7 @@ import {
 import { carWashes } from './car-washes';
 import { customers } from './customers';
 import { vehicleTypeEnum } from './enums';
+import { vehicleCategories } from './vehicle-categories';
 
 export const vehicles = pgTable(
   'vehicles',
@@ -28,6 +29,10 @@ export const vehicles = pgTable(
     color: varchar('color', { length: 50 }),
     year: integer('year'),
     vehicleType: vehicleTypeEnum('vehicle_type').notNull().default('OTHER'),
+    /** Private / taxi / ... as last washed; pre-selected for the next wash. */
+    categoryId: uuid('category_id').references(() => vehicleCategories.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),

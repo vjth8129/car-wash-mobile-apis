@@ -1,13 +1,23 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { orders, Order } from '../db/schema';
+import { bookingDetailRelations } from './booking.repository';
 
 export interface OrderWithBooking extends Order {
   booking: {
     id: string;
     status: string;
     vehicleCategory: 'PRIVATE' | 'TAXI';
+    categoryId: string | null;
     price: string | null;
+    category: { id: string; code: string; name: string } | null;
+    items: {
+      id: string;
+      serviceId: string;
+      name: string;
+      price: string;
+      durationMinutes: number;
+    }[];
     customer: { id: string; name: string; phone: string } | null;
     vehicle: { id: string; registrationNumber: string } | null;
     service: {
@@ -34,6 +44,7 @@ export async function findOrderById(
           service: {
             columns: { id: true, name: true, price: true, taxiPrice: true, durationMinutes: true },
           },
+          ...bookingDetailRelations,
         },
       },
     },
@@ -53,6 +64,7 @@ export async function findOrderByBookingId(
 interface ListOrdersOptions {
   carWashId: string;
   status?: string;
+  paymentStatus?: 'PAID' | 'UNPAID';
   page: number;
   limit: number;
   offset: number;
@@ -68,6 +80,11 @@ export async function listOrders(options: ListOrdersOptions) {
       ),
     );
   }
+  if (options.paymentStatus) {
+    conditions.push(
+      options.paymentStatus === 'PAID' ? isNotNull(orders.paidAt) : isNull(orders.paidAt),
+    );
+  }
   const where = and(...conditions);
 
   const [rows, totalRow] = await Promise.all([
@@ -79,6 +96,7 @@ export async function listOrders(options: ListOrdersOptions) {
             customer: { columns: { id: true, name: true, phone: true } },
             vehicle: { columns: { id: true, registrationNumber: true } },
             service: { columns: { id: true, name: true, price: true, taxiPrice: true } },
+            ...bookingDetailRelations,
           },
         },
       },

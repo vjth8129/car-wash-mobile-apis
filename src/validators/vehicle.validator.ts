@@ -19,6 +19,8 @@ export const createVehicleSchema = z.object({
   color: z.string().max(50).optional(),
   year: z.number().int().min(1900).max(2100).optional(),
   vehicleType: vehicleTypeEnum.default('OTHER'),
+  /** Private / taxi / ...; defaults to Private. */
+  categoryId: z.string().uuid().optional(),
 });
 
 export const updateVehicleSchema = z.object({
@@ -29,6 +31,7 @@ export const updateVehicleSchema = z.object({
   color: z.string().max(50).optional(),
   year: z.number().int().min(1900).max(2100).optional(),
   vehicleType: vehicleTypeEnum.optional(),
+  categoryId: z.string().uuid().optional(),
 });
 
 export const vehicleIdParamSchema = z.object({ id: z.string().uuid() });

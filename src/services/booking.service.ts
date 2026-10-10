@@ -1,7 +1,17 @@
 import * as bookingRepo from '../repositories/booking.repository';
 import { findCustomerById } from '../repositories/customer.repository';
 import { findVehicleById } from '../repositories/vehicle.repository';
-import { findServiceById } from '../repositories/service.repository';
+import { findServicesByIds, ServiceWithRates } from '../repositories/service.repository';
+import { resolveCategory } from './vehicle-category.service';
+import { db } from '../db';
+import {
+  bookings,
+  bookingServices,
+  vehicles,
+  VehicleCategory,
+  TAXI_VEHICLE_CATEGORY_CODE,
+} from '../db/schema';
+import { and, eq } from 'drizzle-orm';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 import { buildPagination } from '../utils/api-response';
 import { PaginationQuery } from '../utils/pagination';
@@ -21,15 +31,17 @@ const ALLOWED_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   NO_SHOW: [],
 };
 
-type VehicleCategory = 'PRIVATE' | 'TAXI';
-
-/** The rate a booking is charged: the taxi rate for taxis when one is set, else the regular price. */
+/** The rate a service charges for a vehicle category: its rate for that category, else its price. */
 export function rateForCategory(
-  service: { price: string; taxiPrice: string | null },
-  category: VehicleCategory,
+  service: { price: string; rates?: { categoryId: string; price: string }[] },
+  categoryId: string,
 ): string {
-  return category === 'TAXI' && service.taxiPrice !== null ? service.taxiPrice : service.price;
+  return service.rates?.find((r) => r.categoryId === categoryId)?.price ?? service.price;
 }
+
+/** Older clients read a PRIVATE/TAXI flag; any other category counts as private for them. */
+const legacyCategoryFlag = (category: VehicleCategory): 'PRIVATE' | 'TAXI' =>
+  category.code === TAXI_VEHICLE_CATEGORY_CODE ? 'TAXI' : 'PRIVATE';
 
 /** Editable fields (date/time/service/vehicle/notes) only make sense before work has started. */
 const EDITABLE_STATUSES: BookingStatus[] = ['PENDING', 'CONFIRMED'];
@@ -42,27 +54,49 @@ function addMinutesToTime(startTime: string, minutes: number): string {
   return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 }
 
+const uniqueIds = (ids: string[]) => [...new Set(ids)];
+
 async function validateRelations(
   carWashId: string,
-  {
-    customerId,
-    vehicleId,
-    serviceId,
-  }: { customerId: string; vehicleId: string; serviceId: string },
+  { customerId, vehicleId }: { customerId: string; vehicleId: string },
 ) {
-  const [customer, vehicle, service] = await Promise.all([
+  const [customer, vehicle] = await Promise.all([
     findCustomerById(customerId, carWashId),
     findVehicleById(vehicleId, carWashId),
-    findServiceById(serviceId, carWashId),
   ]);
   if (!customer) throw new ValidationError('Customer does not belong to your car wash');
   if (!vehicle) throw new ValidationError('Vehicle does not belong to your car wash');
   if (vehicle.customerId !== customerId) {
     throw new ValidationError('Vehicle does not belong to the specified customer');
   }
-  if (!service) throw new ValidationError('Service does not belong to your car wash');
-  if (service.status !== 'ACTIVE') throw new ValidationError('Service is not currently active');
-  return { customer, vehicle, service };
+  return { customer, vehicle };
+}
+
+/** Loads the chosen services (all must be active and in this car wash), in the order given. */
+async function loadServices(carWashId: string, serviceIds: string[]) {
+  const found = await findServicesByIds(serviceIds, carWashId);
+  return serviceIds.map((id) => {
+    const service = found.find((s) => s.id === id);
+    if (!service) throw new ValidationError('Service does not belong to your car wash');
+    if (service.status !== 'ACTIVE') {
+      throw new ValidationError(`${service.name} is not currently active`);
+    }
+    return service;
+  });
+}
+
+/** Line items snapshotted from each service's rate for the category, plus their totals. */
+function priceItems(services: ServiceWithRates[], category: VehicleCategory) {
+  const items = services.map((service, i) => ({
+    serviceId: service.id,
+    name: service.name,
+    price: rateForCategory(service, category.id),
+    durationMinutes: service.durationMinutes,
+    sortOrder: i,
+  }));
+  const total = items.reduce((sum, item) => sum + Number(item.price), 0).toFixed(2);
+  const minutes = items.reduce((sum, item) => sum + item.durationMinutes, 0);
+  return { items, total, minutes };
 }
 
 export async function listBookings(
@@ -86,8 +120,16 @@ export async function createBooking(
   input: any,
   req?: Request,
 ) {
-  const { service } = await validateRelations(carWashId, input);
-  const endTime = addMinutesToTime(input.startTime, service.durationMinutes);
+  const { vehicle } = await validateRelations(carWashId, input);
+  const services = await loadServices(carWashId, uniqueIds(input.serviceIds ?? [input.serviceId]));
+  // An explicit choice wins; otherwise the vehicle's usual category (e.g. a known taxi).
+  const category = await resolveCategory({
+    categoryId: input.vehicleCategoryId,
+    code: input.vehicleCategory,
+    fallbackId: vehicle.categoryId,
+  });
+  const { items, total, minutes } = priceItems(services, category);
+  const endTime = addMinutesToTime(input.startTime, minutes);
 
   const conflicts = await bookingRepo.findOverlappingBookingsForVehicle(
     carWashId,
@@ -100,19 +142,33 @@ export async function createBooking(
     throw new ConflictError('This vehicle already has an overlapping booking at that time');
   }
 
-  const vehicleCategory: VehicleCategory = input.vehicleCategory ?? 'PRIVATE';
-  const booking = await bookingRepo.createBooking({
-    carWashId,
-    customerId: input.customerId,
-    vehicleId: input.vehicleId,
-    serviceId: input.serviceId,
-    bookingDate: input.bookingDate,
-    startTime: input.startTime,
-    endTime,
-    notes: input.notes,
-    vehicleCategory,
-    price: rateForCategory(service, vehicleCategory),
-    createdBy: user.id,
+  const booking = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(bookings)
+      .values({
+        carWashId,
+        customerId: input.customerId,
+        vehicleId: input.vehicleId,
+        serviceId: services[0].id,
+        bookingDate: input.bookingDate,
+        startTime: input.startTime,
+        endTime,
+        notes: input.notes,
+        vehicleCategory: legacyCategoryFlag(category),
+        categoryId: category.id,
+        price: total,
+        createdBy: user.id,
+      })
+      .returning();
+    await tx.insert(bookingServices).values(items.map((item) => ({ ...item, bookingId: row.id })));
+    // The vehicle remembers its category so the next wash starts with it.
+    if (vehicle.categoryId !== category.id) {
+      await tx
+        .update(vehicles)
+        .set({ categoryId: category.id, updatedAt: new Date() })
+        .where(eq(vehicles.id, vehicle.id));
+    }
+    return row;
   });
 
   await recordAuditLog({
@@ -131,15 +187,44 @@ export async function updateBooking(carWashId: string, id: string, input: any, r
   if (!EDITABLE_STATUSES.includes(existing.status as BookingStatus)) {
     throw new ValidationError(`Cannot modify a booking with status ${existing.status}`);
   }
+  const existingItems = (existing as any).items as { serviceId: string; durationMinutes: number }[];
 
   const customerId = existing.customerId;
   const vehicleId = input.vehicleId ?? existing.vehicleId;
-  const serviceId = input.serviceId ?? existing.serviceId;
-  const { service } = await validateRelations(carWashId, { customerId, vehicleId, serviceId });
+  const { vehicle } = await validateRelations(carWashId, { customerId, vehicleId });
+
+  const serviceIds: string[] = uniqueIds(
+    input.serviceIds ??
+      (input.serviceId
+        ? [input.serviceId]
+        : existingItems.length
+          ? existingItems.map((i) => i.serviceId)
+          : [existing.serviceId]),
+  );
+  const servicesChanged =
+    serviceIds.join() !==
+    (existingItems.length ? existingItems.map((i) => i.serviceId) : [existing.serviceId]).join();
+  const categoryChosen =
+    input.vehicleCategoryId !== undefined || input.vehicleCategory !== undefined;
+  const category = await resolveCategory({
+    categoryId: input.vehicleCategoryId,
+    code: input.vehicleCategory,
+    fallbackId: existing.categoryId,
+  });
+  // Re-price only when what's being bought changed; otherwise keep the original snapshot.
+  const repriced =
+    servicesChanged ||
+    category.id !== existing.categoryId ||
+    existing.price === null ||
+    !existingItems.length;
+  const priced = repriced ? priceItems(await loadServices(carWashId, serviceIds), category) : null;
 
   const bookingDate = input.bookingDate ?? existing.bookingDate;
   const startTime = input.startTime ?? existing.startTime;
-  const endTime = addMinutesToTime(startTime, service.durationMinutes);
+  const minutes = priced
+    ? priced.minutes
+    : existingItems.reduce((sum, item) => sum + item.durationMinutes, 0);
+  const endTime = addMinutesToTime(startTime, minutes);
 
   const conflicts = await bookingRepo.findOverlappingBookingsForVehicle(
     carWashId,
@@ -153,22 +238,34 @@ export async function updateBooking(carWashId: string, id: string, input: any, r
     throw new ConflictError('This vehicle already has an overlapping booking at that time');
   }
 
-  const vehicleCategory: VehicleCategory = input.vehicleCategory ?? existing.vehicleCategory;
-  // Re-price only when what's being bought changed; otherwise keep the original snapshot.
-  const repriced = serviceId !== existing.serviceId || vehicleCategory !== existing.vehicleCategory;
-
-  await bookingRepo.updateBooking(id, carWashId, {
-    vehicleId,
-    serviceId,
-    bookingDate,
-    startTime,
-    endTime,
-    notes: input.notes ?? existing.notes,
-    vehicleCategory,
-    price:
-      repriced || existing.price === null
-        ? rateForCategory(service, vehicleCategory)
-        : existing.price,
+  await db.transaction(async (tx) => {
+    await tx
+      .update(bookings)
+      .set({
+        vehicleId,
+        serviceId: serviceIds[0],
+        bookingDate,
+        startTime,
+        endTime,
+        notes: input.notes ?? existing.notes,
+        vehicleCategory: legacyCategoryFlag(category),
+        categoryId: category.id,
+        ...(priced ? { price: priced.total } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(bookings.id, id), eq(bookings.carWashId, carWashId)));
+    if (priced) {
+      await tx.delete(bookingServices).where(eq(bookingServices.bookingId, id));
+      await tx
+        .insert(bookingServices)
+        .values(priced.items.map((item) => ({ ...item, bookingId: id })));
+    }
+    if (categoryChosen && vehicle.categoryId !== category.id) {
+      await tx
+        .update(vehicles)
+        .set({ categoryId: category.id, updatedAt: new Date() })
+        .where(eq(vehicles.id, vehicle.id));
+    }
   });
 
   await recordAuditLog({

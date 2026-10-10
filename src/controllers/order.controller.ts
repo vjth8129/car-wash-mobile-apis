@@ -12,13 +12,14 @@ function carWashIdOf(req: Request): string {
 
 export const listOrders = asyncHandler(async (req: Request, res: Response) => {
   const pagination = parsePaginationQuery(req.query as Record<string, unknown>);
-  const { status } = req.query as { status?: string };
+  const { status, paymentStatus } = req.query as {
+    status?: string;
+    paymentStatus?: 'PAID' | 'UNPAID';
+  };
   const { rows, pagination: paginationResult } = await orderService.listOrders(
     carWashIdOf(req),
     pagination,
-    {
-      status,
-    },
+    { status, paymentStatus },
   );
   sendList(res, rows, paginationResult);
 });
@@ -36,6 +37,17 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
     req,
   );
   sendSuccess(res, order, 201);
+});
+
+export const recordPayment = asyncHandler(async (req: Request, res: Response) => {
+  const order = await orderService.recordPayment(
+    req.user!,
+    carWashIdOf(req),
+    req.params.id,
+    req.body.method,
+    req,
+  );
+  sendSuccess(res, order);
 });
 
 export const updateOrderStatus = asyncHandler(async (req: Request, res: Response) => {

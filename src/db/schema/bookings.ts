@@ -5,6 +5,7 @@ import { vehicles } from './vehicles';
 import { services } from './services';
 import { users } from './users';
 import { bookingStatusEnum, vehicleCategoryEnum } from './enums';
+import { vehicleCategories } from './vehicle-categories';
 
 export const bookings = pgTable(
   'bookings',
@@ -27,10 +28,14 @@ export const bookings = pgTable(
     endTime: time('end_time').notNull(),
     status: bookingStatusEnum('status').notNull().default('PENDING'),
     notes: text('notes'),
+    /** Legacy PRIVATE/TAXI flag for older clients; categoryId is the source of truth. */
     vehicleCategory: vehicleCategoryEnum('vehicle_category').notNull().default('PRIVATE'),
+    categoryId: uuid('category_id').references(() => vehicleCategories.id, {
+      onDelete: 'set null',
+    }),
     /**
-     * Amount charged, snapshotted from the service's private/taxi rate when the booking is
-     * created (or its service/category changes), so later rate changes don't alter it.
+     * Total charged: the sum of the booking_services price snapshots, taken from each service's
+     * rate for the vehicle category when booked, so later rate changes don't alter it.
      */
     price: numeric('price', { precision: 10, scale: 2 }),
     createdBy: uuid('created_by')

@@ -6,6 +6,7 @@ import { validate } from '../middlewares/validate.middleware';
 import {
   createOrderSchema,
   updateOrderStatusSchema,
+  recordPaymentSchema,
   orderIdParamSchema,
   listOrdersQuerySchema,
 } from '../validators/order.validator';
@@ -24,6 +25,10 @@ router.use(authenticate);
  *       - in: query
  *         name: status
  *         schema: { type: string, enum: [CREATED, WASHING, READY, COMPLETED, CANCELLED] }
+ *       - in: query
+ *         name: paymentStatus
+ *         description: UNPAID lists jobs with no payment noted yet (e.g. staff forgot to mark it)
+ *         schema: { type: string, enum: [PAID, UNPAID] }
  *     responses:
  *       200: { description: List of orders }
  *   post:
@@ -100,6 +105,36 @@ router.patch(
   requirePermission(PERMISSIONS.ORDERS_UPDATE),
   validate({ params: orderIdParamSchema, body: updateOrderStatusSchema }),
   orderController.updateOrderStatus,
+);
+
+/**
+ * @openapi
+ * /orders/{id}/payment:
+ *   put:
+ *     tags: [Orders]
+ *     summary: Note that the customer paid (the app shows the car wash's QR; it doesn't take payments)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [method]
+ *             properties:
+ *               method: { type: string, enum: [UPI, CASH], nullable: true, description: null clears the payment }
+ *     responses:
+ *       200: { description: Order with paidAt / paymentMethod }
+ */
+router.put(
+  '/:id/payment',
+  requirePermission(PERMISSIONS.ORDERS_UPDATE),
+  validate({ params: orderIdParamSchema, body: recordPaymentSchema }),
+  orderController.recordPayment,
 );
 
 export default router;
