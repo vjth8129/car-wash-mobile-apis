@@ -55,7 +55,7 @@ export async function getMenuForUser(user: AuthenticatedUser) {
 export async function getAppConfig(carWashId?: string | null) {
   const carWash = carWashId ? await findCarWashById(carWashId) : undefined;
   return {
-    appName: carWash?.name ?? 'VandiWash',
+    appName: carWash?.name ?? 'Vahanly',
     currency: carWash?.currency ?? 'INR',
     timezone: carWash?.timezone ?? 'Asia/Kolkata',
     environment: env.NODE_ENV,
