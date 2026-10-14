@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { checkDatabaseConnection, pool } from './db';
+import { startPromotionSender } from './services/promotion.service';
 
 async function start() {
   const connected = await checkDatabaseConnection();
@@ -23,8 +24,11 @@ async function start() {
     }
   });
 
+  const stopPromotionSender = startPromotionSender();
+
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);
+    stopPromotionSender();
     server.close(async () => {
       await pool.end();
       process.exit(0);

@@ -37,6 +37,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASSWORD: z.string().optional().default(''),
   APP_PUBLIC_URL: z.string().default('http://localhost:3000'),
+  /** Promotion messages: "console" logs them (nothing is delivered); a real SMS/WhatsApp provider plugs in here. */
+  MESSAGE_PROVIDER: z.enum(['console']).default('console'),
+  /** How often scheduled promotions are checked for (ms); 0 turns the sender off. */
+  PROMOTION_POLL_MS: z.coerce.number().default(30000),
 });
 
 const parsed = envSchema.safeParse(process.env);

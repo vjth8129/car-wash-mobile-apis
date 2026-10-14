@@ -14,4 +14,5 @@ export * from './orders';
 export * from './tokens';
 export * from './audit-logs';
 export * from './payment-qr';
+export * from './promotions';
 export * from './relations';
