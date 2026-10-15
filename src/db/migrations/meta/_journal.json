@@ -57,6 +57,20 @@
       "when": 1791995160793,
       "tag": "0007_promotions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792034193227,
+      "tag": "0008_car_wash_self_signup",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792034193820,
+      "tag": "0009_move_car_wash_addresses",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,13 @@ import { Router } from 'express';
 import * as authController from '../controllers/auth.controller';
 import { authenticate } from '../middlewares/authenticate.middleware';
 import { validate } from '../middlewares/validate.middleware';
-import { authRateLimiter, forgotPasswordRateLimiter } from '../middlewares/rate-limit.middleware';
+import {
+  authRateLimiter,
+  forgotPasswordRateLimiter,
+  signupRateLimiter,
+} from '../middlewares/rate-limit.middleware';
+import { selfSignupSchema } from '../validators/car-wash.validator';
+import { selfSignup } from '../controllers/car-wash.controller';
 import {
   loginSchema,
   refreshSchema,
@@ -58,8 +64,54 @@ const router = Router();
  *                         carWashId: { type: string, format: uuid, nullable: true }
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Right password, but the car wash isn't active. `error.code` is CAR_WASH_PENDING (sign-up under review), CAR_WASH_SUSPENDED or CAR_WASH_INACTIVE; `error.message` is shown to the user.
  */
 router.post('/login', authRateLimiter, validate({ body: loginSchema }), authController.login);
+
+/**
+ * @openapi
+ * /auth/signup:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: A car wash owner signs up their car wash
+ *     description: Creates the car wash (status PENDING, source SELF_SIGNUP) with its address and an OWNER account using the owner's own password. Nobody can sign in until a platform admin activates the car wash - until then login returns 403 CAR_WASH_PENDING. GSTIN and the shop's coordinates are required. Rate-limited per IP.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, gstNumber, address, city, state, postalCode, latitude, longitude, owner]
+ *             properties:
+ *               name: { type: string, example: Aqua Shine }
+ *               description: { type: string }
+ *               phone: { type: string, description: Business phone }
+ *               email: { type: string, format: email }
+ *               gstNumber: { type: string, example: 29ABCDE1234F1Z5 }
+ *               address: { type: string }
+ *               city: { type: string }
+ *               state: { type: string }
+ *               country: { type: string, default: India }
+ *               postalCode: { type: string }
+ *               latitude: { type: number, example: 12.9716 }
+ *               longitude: { type: number, example: 77.5946 }
+ *               owner:
+ *                 type: object
+ *                 required: [name, phone, password]
+ *                 properties:
+ *                   name: { type: string }
+ *                   phone: { type: string, example: "+919000000201" }
+ *                   email: { type: string, format: email }
+ *                   password: { type: string, format: password }
+ *     responses:
+ *       201: { description: Signed up; the car wash is pending review }
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       409: { description: The mobile number is already registered }
+ */
+router.post('/signup', signupRateLimiter, validate({ body: selfSignupSchema }), selfSignup);
 
 /**
  * @openapi

@@ -92,15 +92,24 @@ describe('Platform admin portal endpoints', () => {
     const login = await request(app)
       .post('/api/v1/auth/login')
       .send({ phone: owner.phone, password: owner.password });
-    expect(login.status).toBe(401);
+    expect(login.status).toBe(403);
+    expect(login.body.error.code).toBe('CAR_WASH_SUSPENDED');
+    expect(login.body.error.message).toMatch(/suspended.*renew.*customer care/i);
     const call = await request(app)
       .get('/api/v1/services')
       .set(...bearer(session.body.data.accessToken));
-    expect(call.status).toBe(401);
+    expect(call.status).toBe(403);
+    expect(call.body.error.code).toBe('CAR_WASH_SUSPENDED');
     const refresh = await request(app)
       .post('/api/v1/auth/refresh')
       .send({ refreshToken: session.body.data.refreshToken });
-    expect(refresh.status).toBe(401);
+    expect(refresh.status).toBe(403);
+
+    // A wrong password still gets the generic answer, so the status isn't revealed to guessers.
+    const wrong = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phone: owner.phone, password: 'Wrong@1234' });
+    expect(wrong.status).toBe(401);
 
     await request(app)
       .patch(`/api/v1/car-washes/${carWash.id}`)
@@ -114,10 +123,16 @@ describe('Platform admin portal endpoints', () => {
 
   it('reactivates a deactivated (deleted) car wash', async () => {
     const token = await adminToken();
-    const { carWash } = await onboard(token);
+    const { carWash, owner } = await onboard(token);
     await request(app)
       .delete(`/api/v1/car-washes/${carWash.id}`)
       .set(...bearer(token));
+    const blocked = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phone: owner.phone, password: owner.password });
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe('CAR_WASH_INACTIVE');
+    expect(blocked.body.error.message).toMatch(/no longer active.*customer care/i);
     const res = await request(app)
       .patch(`/api/v1/car-washes/${carWash.id}`)
       .set(...bearer(token))

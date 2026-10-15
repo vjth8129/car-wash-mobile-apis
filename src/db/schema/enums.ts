@@ -1,6 +1,12 @@
 import { pgEnum } from 'drizzle-orm/pg-core';
 
-export const carWashStatusEnum = pgEnum('car_wash_status', ['ACTIVE', 'INACTIVE', 'SUSPENDED']);
+/** PENDING: signed up from the app and waiting for a platform admin to review it. */
+export const carWashStatusEnum = pgEnum('car_wash_status', [
+  'ACTIVE',
+  'INACTIVE',
+  'SUSPENDED',
+  'PENDING',
+]);
 
 export const userStatusEnum = pgEnum('user_status', ['ACTIVE', 'INACTIVE', 'SUSPENDED']);
 

@@ -72,3 +72,17 @@ export const forgotPasswordRateLimiter = rateLimit({
     },
   },
 });
+
+export const signupRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: env.SIGNUP_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Too many sign-up attempts, please try again later',
+    },
+  },
+});

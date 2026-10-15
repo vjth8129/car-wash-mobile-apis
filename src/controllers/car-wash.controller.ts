@@ -19,7 +19,7 @@ export const getPlatformStats = asyncHandler(async (_req: Request, res: Response
 });
 
 export const getCarWash = asyncHandler(async (req: Request, res: Response) => {
-  const carWash = await carWashService.getCarWash(req.params.id);
+  const carWash = await carWashService.getCarWash(req.params.id, req.user);
   sendSuccess(res, carWash);
 });
 
@@ -36,4 +36,8 @@ export const updateCarWash = asyncHandler(async (req: Request, res: Response) =>
 export const deleteCarWash = asyncHandler(async (req: Request, res: Response) => {
   await carWashService.deleteCarWash(req.params.id, req);
   sendSuccess(res, { message: 'Car wash deactivated successfully' });
+});
+
+export const selfSignup = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await carWashService.selfSignup(req.body, req), 201);
 });

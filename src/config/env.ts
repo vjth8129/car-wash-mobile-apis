@@ -30,6 +30,8 @@ const envSchema = z.object({
   /** Per-IP limit for login / refresh / reset-password / change-password. */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().default(20),
   FORGOT_PASSWORD_RATE_LIMIT_MAX: z.coerce.number().default(5),
+  /** Per-IP car wash self sign-ups per hour. */
+  SIGNUP_RATE_LIMIT_MAX: z.coerce.number().default(5),
   MAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
   MAIL_FROM: z.string().default('no-reply@carwash.local'),
   SMTP_HOST: z.string().optional().default(''),

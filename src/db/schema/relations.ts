@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { carWashes } from './car-washes';
+import { carWashes, carWashAddresses } from './car-washes';
 import { permissions } from './permissions';
 import { roles, rolePermissions } from './roles';
 import { users } from './users';
@@ -14,7 +14,11 @@ import { orders } from './orders';
 import { refreshTokens, passwordResetTokens } from './tokens';
 import { auditLogs } from './audit-logs';
 
-export const carWashesRelations = relations(carWashes, ({ many }) => ({
+export const carWashesRelations = relations(carWashes, ({ one, many }) => ({
+  location: one(carWashAddresses, {
+    fields: [carWashes.id],
+    references: [carWashAddresses.carWashId],
+  }),
   users: many(users),
   roles: many(roles),
   services: many(services),
@@ -22,6 +26,10 @@ export const carWashesRelations = relations(carWashes, ({ many }) => ({
   vehicles: many(vehicles),
   bookings: many(bookings),
   orders: many(orders),
+}));
+
+export const carWashAddressesRelations = relations(carWashAddresses, ({ one }) => ({
+  carWash: one(carWashes, { fields: [carWashAddresses.carWashId], references: [carWashes.id] }),
 }));
 
 export const rolesRelations = relations(roles, ({ one, many }) => ({

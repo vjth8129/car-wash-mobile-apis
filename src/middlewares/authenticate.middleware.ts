@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
-import { AppError, UnauthorizedError } from '../utils/errors';
+import { AppError, CarWashNotActiveError, UnauthorizedError } from '../utils/errors';
 import { findUserById } from '../repositories/user.repository';
 import { getEffectivePermissionKeys } from '../repositories/permission.repository';
 import { asyncHandler } from '../utils/async-handler';
@@ -42,7 +42,7 @@ export const authenticate = asyncHandler(
       throw new UnauthorizedError('Car wash account no longer exists');
     }
     if (user.carWash && user.carWash.status !== 'ACTIVE') {
-      throw new UnauthorizedError('Car wash account is not active');
+      throw new CarWashNotActiveError(user.carWash.status);
     }
 
     if (

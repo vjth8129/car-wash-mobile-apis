@@ -7,6 +7,7 @@ import {
   rolePermissions as rolePermissionsTable,
   users as usersTable,
   carWashes as carWashesTable,
+  carWashAddresses as carWashAddressesTable,
   menus as menusTable,
   services as servicesTable,
   customers as customersTable,
@@ -244,15 +245,18 @@ async function seedCarWash() {
         description: 'Flagship demo car wash used for development seed data',
         phone: '+91-9999999999',
         email: 'contact@sparklecarwash.example',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        country: 'India',
-        postalCode: '560001',
         status: 'ACTIVE',
         timezone: 'Asia/Kolkata',
         currency: 'INR',
       })
       .returning();
+    await db.insert(carWashAddressesTable).values({
+      carWashId: inserted.id,
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      country: 'India',
+      postalCode: '560001',
+    });
     carWash = inserted;
   }
   return carWash;

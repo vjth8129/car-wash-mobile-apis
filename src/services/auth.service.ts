@@ -29,7 +29,7 @@ import { generateOpaqueToken, hashToken } from '../utils/tokens';
 import { signAccessToken } from '../utils/jwt';
 import { parseDurationMs } from '../utils/duration';
 import { env } from '../config/env';
-import { UnauthorizedError, ValidationError } from '../utils/errors';
+import { CarWashNotActiveError, UnauthorizedError, ValidationError } from '../utils/errors';
 import { sendPasswordResetCodeEmail } from '../utils/mailer';
 import { recordAuditLog, AUDIT_ACTIONS } from './audit-log.service';
 import { logger } from '../config/logger';
@@ -132,9 +132,6 @@ export async function login(identifier: AccountIdentifier, password: string, req
   if (user.status !== 'ACTIVE') {
     throw new UnauthorizedError(INVALID_CREDENTIALS);
   }
-  if (user.carWash && user.carWash.status !== 'ACTIVE') {
-    throw new UnauthorizedError(INVALID_CREDENTIALS);
-  }
 
   const valid = await verifyPassword(user.passwordHash, password);
   if (!valid) {
@@ -147,6 +144,10 @@ export async function login(identifier: AccountIdentifier, password: string, req
       entityId: user.id,
     });
     throw new UnauthorizedError(INVALID_CREDENTIALS);
+  }
+  // Only once the password is right do we say why the car wash can't be used.
+  if (user.carWash && user.carWash.status !== 'ACTIVE') {
+    throw new CarWashNotActiveError(user.carWash.status);
   }
 
   const tokens = await issueTokensForUser(
@@ -187,7 +188,7 @@ export async function refreshTokensForClient(refreshToken: string, req?: Request
     throw new UnauthorizedError('User account is not active');
   }
   if (user.carWash && user.carWash.status !== 'ACTIVE') {
-    throw new UnauthorizedError('Car wash account is not active');
+    throw new CarWashNotActiveError(user.carWash.status);
   }
 
   const secret = generateOpaqueToken();
