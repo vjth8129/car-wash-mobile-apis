@@ -230,6 +230,10 @@ See section 9 above. Development only - do not reuse in production.
 
 ## 18. Production deployment notes
 
+Environments (UAT, production) live on AWS as CloudFormation stacks. Ship changes with
+`scripts/deploy.sh <env>` and create a new environment with `scripts/create-stack.sh <env>`. See
+[deploy/aws/README.md](deploy/aws/README.md). Those scripts take care of the points below.
+
 - Set real, random `JWT_*_SECRET` values (`openssl rand -hex 64`) and a real
   `MAIL_PROVIDER=smtp` integration (wire `nodemailer` or your provider's SDK
   into `src/utils/mailer.ts`'s `SmtpMailProvider`).

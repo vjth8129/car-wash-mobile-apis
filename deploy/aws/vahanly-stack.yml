@@ -1,0 +1,367 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Vahanly - one environment (uat, prod, ...) of the car wash API + super admin portal:
+  its own VPC, an EC2 instance (Docker API behind nginx, admin portal at /admin/),
+  an Elastic IP, a private Postgres RDS instance, and an S3 bucket for deploy bundles.
+  Deploys go over SSM Run Command - no SSH port and no key pairs.
+  Create/update with scripts/create-stack.sh <env>; ship code with scripts/deploy.sh <env>.
+
+Parameters:
+  EnvName:
+    Type: String
+    AllowedPattern: '^[a-z][a-z0-9-]{1,15}$'
+    Description: Short environment name (uat, prod). Used to name and tag every resource.
+  Domain:
+    Type: String
+    Default: ''
+    Description: >
+      Optional hostname (e.g. api.example.com) whose DNS A record points at this stack's
+      Elastic IP. Blank = the free <elastic-ip>.nip.io hostname.
+  CertEmail:
+    Type: String
+    Default: ''
+    Description: Email for Let's Encrypt expiry notices. Blank = admin@<hostname>.
+  VpcCidr:
+    Type: String
+    Default: 10.40.0.0/16
+    Description: Must not overlap another environment's VPC if you ever peer them.
+  InstanceType:
+    Type: String
+    Default: t3.small
+    Description: The API image is built on the instance, so 2 GB (t3.small) is the comfortable minimum.
+  RootVolumeSize:
+    Type: Number
+    Default: 20
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  DBEngineVersion:
+    Type: String
+    Default: '16'
+    Description: Postgres major version for a fresh database (ignored when restoring - the snapshot's version is kept).
+  DBMultiAZ:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  DBBackupRetentionDays:
+    Type: Number
+    Default: 7
+  DBDeletionProtection:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  DBSnapshotIdentifier:
+    Type: String
+    Default: ''
+    Description: >
+      Blank = start with an empty database. Otherwise the snapshot ARN/name to restore on
+      creation. Keep the same value on later updates - changing it replaces the database.
+  DevResetCode:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >
+      Fixed password-reset code accepted for testing (e.g. 1111 on UAT). Leave blank in
+      production - anyone who can request a code could otherwise reset any account.
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref Domain, '']]
+  HasCertEmail: !Not [!Equals [!Ref CertEmail, '']]
+  RestoreFromSnapshot: !Not [!Equals [!Ref DBSnapshotIdentifier, '']]
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Network: two public subnets (EC2) - RDS sits in them too but isn't publicly
+  # accessible and only accepts the API's security group. No NAT gateway needed.
+  # ---------------------------------------------------------------------------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}' }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}' }]
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 4, 8]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}-a' }]
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 4, 8]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}-b' }]
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}' }]
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetA
+      RouteTableId: !Ref RouteTable
+
+  SubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetB
+      RouteTableId: !Ref RouteTable
+
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'vahanly-${EnvName} API - HTTP/HTTPS only (deploys use SSM, not SSH)'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}-api' }]
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'vahanly-${EnvName} RDS - Postgres from the API only'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref ApiSecurityGroup }
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}-db' }]
+
+  # ---------------------------------------------------------------------------
+  # Secrets. The DB password is ours (not RDS-managed) so it never rotates out
+  # from under the running API, and so a restored snapshot can be switched to it.
+  # ---------------------------------------------------------------------------
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Postgres master credentials for the API
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"carwash_admin"}'
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true
+
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Seed the instance derives the API's JWT signing secrets from
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: seed
+        PasswordLength: 96
+        ExcludePunctuation: true
+
+  # ---------------------------------------------------------------------------
+  # Database
+  # ---------------------------------------------------------------------------
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub 'vahanly-${EnvName}'
+      SubnetIds: [!Ref SubnetA, !Ref SubnetB]
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub 'vahanly-${EnvName}-db'
+      Engine: postgres
+      EngineVersion: !If [RestoreFromSnapshot, !Ref 'AWS::NoValue', !Ref DBEngineVersion]
+      DBSnapshotIdentifier: !If [RestoreFromSnapshot, !Ref DBSnapshotIdentifier, !Ref 'AWS::NoValue']
+      # Restores inherit name/username/password/encryption from the snapshot;
+      # scripts/create-stack.sh then switches the password to DbSecret's.
+      DBName: !If [RestoreFromSnapshot, !Ref 'AWS::NoValue', carwash]
+      MasterUsername: !If [RestoreFromSnapshot, !Ref 'AWS::NoValue', !Sub '{{resolve:secretsmanager:${DbSecret}:SecretString:username}}']
+      MasterUserPassword: !If [RestoreFromSnapshot, !Ref 'AWS::NoValue', !Sub '{{resolve:secretsmanager:${DbSecret}:SecretString:password}}']
+      StorageEncrypted: !If [RestoreFromSnapshot, !Ref 'AWS::NoValue', true]
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp3
+      MultiAZ: !Ref DBMultiAZ
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      BackupRetentionPeriod: !Ref DBBackupRetentionDays
+      DeletionProtection: !Ref DBDeletionProtection
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}-db' }]
+
+  # ---------------------------------------------------------------------------
+  # Deploy bundles (scripts/deploy.sh uploads here, the instance pulls)
+  # ---------------------------------------------------------------------------
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-old-bundles, Status: Enabled, ExpirationInDays: 30 }
+
+  # ---------------------------------------------------------------------------
+  # API instance
+  # ---------------------------------------------------------------------------
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'vahanly-${EnvName}-api-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: app
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref DbSecret, !Ref JwtSecret]
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}' }]
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+
+  ApiInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id}}'
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref SubnetA
+      SecurityGroupIds: [!Ref ApiSecurityGroup]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs: { VolumeSize: !Ref RootVolumeSize, VolumeType: gp3, Encrypted: true }
+      Tags: [{ Key: Name, Value: !Sub 'vahanly-${EnvName}-api' }]
+      # Only installs the toolchain and records where things are. Everything that
+      # changes between releases (nginx site, TLS, .env, the app) is done by
+      # deploy/aws/remote-deploy.sh, shipped with each bundle.
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            set -euxo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+
+            # The image is built on the box - swap keeps small instances from OOMing.
+            if [ ! -f /swapfile ]; then
+              fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+              echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            fi
+
+            apt-get update -q
+            apt-get install -y -q nginx certbot python3-certbot-nginx jq unzip
+            curl -fsSL https://get.docker.com | sh
+            systemctl enable --now docker
+            snap install aws-cli --classic || true
+
+            mkdir -p /etc/vahanly /opt/vahanly /var/www/carwash-admin
+            cat > /etc/vahanly/stack.env << 'EOF'
+            ENV_NAME=${EnvName}
+            AWS_REGION=${AWS::Region}
+            APP_HOSTNAME=${Hostname}
+            CERT_EMAIL=${Email}
+            DB_HOST=${Database.Endpoint.Address}
+            DB_PORT=${Database.Endpoint.Port}
+            DB_NAME=carwash
+            DB_SECRET_ARN=${DbSecret}
+            JWT_SECRET_ARN=${JwtSecret}
+            DEV_RESET_CODE=${DevResetCode}
+            EOF
+            chmod 600 /etc/vahanly/stack.env
+          - Hostname: !If [HasDomain, !Ref Domain, !Join ['', [!Join ['-', !Split ['.', !Ref ElasticIp]], '.nip.io']]]
+            Email: !If [HasCertEmail, !Ref CertEmail, !Join ['', ['admin@', !If [HasDomain, !Ref Domain, !Join ['', [!Join ['-', !Split ['.', !Ref ElasticIp]], '.nip.io']]]]]]
+
+  ElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIp.AllocationId
+      InstanceId: !Ref ApiInstance
+
+Outputs:
+  Hostname:
+    Value: !If [HasDomain, !Ref Domain, !Join ['', [!Join ['-', !Split ['.', !Ref ElasticIp]], '.nip.io']]]
+  ApiUrl:
+    Description: Set as EXPO_PUBLIC_API_URL when building the mobile app for this environment
+    Value: !Join ['', ['https://', !If [HasDomain, !Ref Domain, !Join ['', [!Join ['-', !Split ['.', !Ref ElasticIp]], '.nip.io']]], '/api/v1']]
+  AdminUrl:
+    Value: !Join ['', ['https://', !If [HasDomain, !Ref Domain, !Join ['', [!Join ['-', !Split ['.', !Ref ElasticIp]], '.nip.io']]], '/admin/']]
+  ElasticIp:
+    Value: !Ref ElasticIp
+  InstanceId:
+    Value: !Ref ApiInstance
+  ArtifactBucket:
+    Value: !Ref ArtifactBucket
+  DbInstanceId:
+    Value: !Ref Database
+  DbSecretArn:
+    Value: !Ref DbSecret
+  RestoredFromSnapshot:
+    Value: !If [RestoreFromSnapshot, 'true', 'false']
